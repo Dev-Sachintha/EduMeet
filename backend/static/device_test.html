@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Test microphone &amp; camera</title>
+<style>
+  :root { --bg:#0f172a; --card:#1e293b; --line:#334155; --text:#e5e7eb; --muted:#94a3b8; --ok:#16a34a; --bad:#dc2626; --warn:#f59e0b; --accent:#2563eb; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font-family:"Segoe UI", system-ui, sans-serif; padding:20px 24px 90px; }
+  h1 { margin:0 0 4px; font-size:22px; } .sub { color:var(--muted); margin:0 0 16px; font-size:14px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(300px, 1fr)); gap:16px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:16px; }
+  h2 { margin:0 0 10px; font-size:17px; display:flex; align-items:center; gap:10px; }
+  .badge { font-size:12px; font-weight:600; padding:3px 10px; border-radius:999px; background:#475569; }
+  .badge.ok { background:var(--ok); } .badge.bad { background:var(--bad); } .badge.warn { background:var(--warn); color:#111; }
+  select { width:100%; background:#0f172a; color:var(--text); border:1px solid var(--line); border-radius:8px; padding:9px; font-size:14px; }
+  .vwrap { margin-top:12px; background:#000; border-radius:10px; overflow:hidden; aspect-ratio:4/3; }
+  video { width:100%; height:100%; object-fit:cover; transform:scaleX(-1); }
+  .meter { position:relative; height:22px; margin-top:16px; background:#0f172a; border:1px solid var(--line); border-radius:8px; overflow:hidden; }
+  #bar { height:100%; width:0; background:linear-gradient(90deg, #16a34a, #f59e0b 75%, #dc2626); transition:width 60ms linear; }
+  #peak { position:absolute; top:0; bottom:0; width:3px; background:#fff; left:0; }
+  .info { margin-top:10px; color:var(--muted); font-size:13px; min-height:36px; line-height:1.45; }
+  button { margin-top:10px; background:var(--accent); color:#fff; border:0; border-radius:8px; padding:10px 16px; cursor:pointer; font-size:14px; }
+  button:hover { filter:brightness(1.1); } button:disabled { opacity:.55; cursor:wait; }
+  .bottom { position:fixed; left:0; right:0; bottom:0; padding:14px; background:var(--card); border-top:1px solid var(--line); display:flex; justify-content:center; gap:12px; }
+  .bottom button { margin:0; min-width:140px; } .bottom .quiet { background:#475569; }
+</style>
+</head>
+<body>
+<h1>Test your microphone and camera</h1>
+<p class="sub">Choose your devices and check that they work. Your choices are remembered and used in your next meeting. Headphones avoid echo during the playback test.</p>
+
+<div class="grid">
+  <section class="card">
+    <h2>Camera <span id="camBadge" class="badge">starting</span></h2>
+    <select id="camSel"></select>
+    <div class="vwrap"><video id="vid" autoplay playsinline muted></video></div>
+    <canvas id="probe" width="64" height="48" hidden></canvas>
+    <div id="camInfo" class="info"></div>
+  </section>
+
+  <section class="card">
+    <h2>Microphone <span id="micBadge" class="badge">starting</span></h2>
+    <select id="micSel"></select>
+    <div class="meter"><div id="bar"></div><div id="peak"></div></div>
+    <div id="micInfo" class="info">Say something - the bar should move.</div>
+    <button id="btnLoop">Record 4 seconds and play it back</button>
+  </section>
+
+  <section class="card">
+    <h2>Speakers <span id="spkBadge" class="badge">not tested</span></h2>
+    <select id="spkSel"></select>
+    <button id="btnTone">Play a test sound</button>
+    <div id="spkInfo" class="info"></div>
+  </section>
+</div>
+
+<div class="bottom">
+  <button id="btnAgain" class="quiet">Restart test</button>
+  <button id="btnDone">Done</button>
+</div>
+
+<script>
+(() => {
+  "use strict";
+  const $ = (id) => document.getElementById(id);
+  const store = {
+    get(k) { try { return localStorage.getItem("edumeet." + k) || ""; } catch (e) { return ""; } },
+    set(k, v) { try { localStorage.setItem("edumeet." + k, v); } catch (e) {} },
+  };
+  let camStream = null, micStream = null, ac = null, analyser = null, raf = 0, probeTimer = 0;
+  let peak = 0, micHeard = false, micStarted = 0, busy = false;
+
+  function setBadge(name, text, cls) { const b = $(name + "Badge"); b.textContent = text; b.className = "badge" + (cls ? " " + cls : ""); }
+  function explain(e, what) {
+    switch (e && e.name) {
+      case "NotAllowedError": return `${what} is blocked. In Windows open Settings > Privacy & security > ${what} and turn on access for desktop apps.`;
+      case "NotFoundError": return `No ${what.toLowerCase()} was found. Plug one in, or pick another device.`;
+      case "NotReadableError": return `${what} is being used by another app (Teams, Zoom, a browser tab...). Close it and press Restart test.`;
+      default: return `${what} problem: ${(e && e.message) || e}`;
+    }
+  }
+  const stop = (s) => { if (s) s.getTracks().forEach((t) => t.stop()); };
+
+  // Ask for a device; if the saved one is gone, fall back to the default.
+  async function gum(kind, id, extra) {
+    const make = (useId) => ({ [kind]: { ...(extra || {}), ...(useId && id ? { deviceId: { exact: id } } : {}) } });
+    try { return await navigator.mediaDevices.getUserMedia(make(true)); }
+    catch (e) {
+      if (id && e && (e.name === "OverconstrainedError" || e.name === "NotFoundError")) return await navigator.mediaDevices.getUserMedia(make(false));
+      throw e;
+    }
+  }
+
+  async function listDevices() {
+    const devs = await navigator.mediaDevices.enumerateDevices();
+    const fill = (sel, kind, key, current) => {
+      const keep = current || store.get(key), list = devs.filter((d) => d.kind === kind);
+      sel.innerHTML = "";
+      list.forEach((d, i) => sel.add(new Option(d.label || `${kind} ${i + 1}`, d.deviceId)));
+      if (!list.length) sel.add(new Option("None found", ""));
+      sel.value = list.some((d) => d.deviceId === keep) ? keep : (list[0] ? list[0].deviceId : "");
+    };
+    const cur = (s, kind) => (s && s.getTracks()[0] && s.getTracks()[0].getSettings().deviceId) || "";
+    fill($("camSel"), "videoinput", "camId", cur(camStream));
+    fill($("micSel"), "audioinput", "micId", cur(micStream));
+    fill($("spkSel"), "audiooutput", "spkId", "");
+  }
+
+  // ---------- camera ----------
+  async function startCam() {
+    stop(camStream); camStream = null; clearInterval(probeTimer);
+    setBadge("cam", "starting", ""); $("camInfo").textContent = "";
+    try {
+      camStream = await gum("video", $("camSel").value || store.get("camId"), { width: { ideal: 1280 }, height: { ideal: 720 } });
+      $("vid").srcObject = camStream; await $("vid").play().catch(() => {});
+      const t = camStream.getVideoTracks()[0], s = t.getSettings();
+      store.set("camId", s.deviceId || "");
+      $("camInfo").textContent = `${t.label} - ${s.width}x${s.height} at ${Math.round(s.frameRate || 0)} fps`;
+      setBadge("cam", "checking", "warn");
+      probeTimer = setInterval(checkPicture, 1000);
+    } catch (e) { setBadge("cam", "problem", "bad"); $("camInfo").textContent = explain(e, "Camera"); }
+    await listDevices().catch(() => {});
+  }
+  function checkPicture() {                                   // a flat colour means a covered lens or the wrong device
+    const v = $("vid"), cv = $("probe"), c = cv.getContext("2d", { willReadFrequently: true });
+    if (!camStream || v.videoWidth === 0) return;
+    c.drawImage(v, 0, 0, cv.width, cv.height);
+    const d = c.getImageData(0, 0, cv.width, cv.height).data;
+    let n = 0, sum = 0, sq = 0;
+    for (let i = 0; i < d.length; i += 16) { const y = d[i] * 0.3 + d[i + 1] * 0.59 + d[i + 2] * 0.11; n++; sum += y; sq += y * y; }
+    const mean = sum / n, sd = Math.sqrt(Math.max(0, sq / n - mean * mean));
+    if (sd < 5) {
+      setBadge("cam", "blank picture", "warn");
+      $("camInfo").textContent = "The picture is a single flat colour. Is the lens covered, a shutter closed, or is this the wrong camera? Try another camera above.";
+    } else { setBadge("cam", "working", "ok"); }
+  }
+
+  // ---------- microphone ----------
+  async function startMic() {
+    stop(micStream); micStream = null; cancelAnimationFrame(raf);
+    if (ac) { try { await ac.close(); } catch (e) {} ac = null; }
+    peak = 0; micHeard = false; setBadge("mic", "starting", ""); $("micInfo").textContent = "Say something - the bar should move.";
+    try {
+      micStream = await gum("audio", $("micSel").value || store.get("micId"));
+      store.set("micId", micStream.getAudioTracks()[0].getSettings().deviceId || "");
+      ac = new (window.AudioContext || window.webkitAudioContext)(); await ac.resume().catch(() => {});
+      analyser = ac.createAnalyser(); analyser.fftSize = 1024;
+      ac.createMediaStreamSource(micStream).connect(analyser);      // not connected to the speakers: no echo
+      micStarted = performance.now(); setBadge("mic", "listening", "warn");
+      meterLoop();
+    } catch (e) { setBadge("mic", "problem", "bad"); $("micInfo").textContent = explain(e, "Microphone"); }
+    await listDevices().catch(() => {});
+  }
+  function meterLoop() {
+    if (!analyser) return;
+    const buf = new Uint8Array(analyser.fftSize); analyser.getByteTimeDomainData(buf);
+    let sum = 0; for (const b of buf) { const x = (b - 128) / 128; sum += x * x; }
+    const level = Math.min(1, Math.sqrt(sum / buf.length) * 4);
+    peak = Math.max(level, peak * 0.985);
+    $("bar").style.width = (level * 100).toFixed(0) + "%"; $("peak").style.left = Math.min(99, peak * 100) + "%";
+    if (level > 0.06 && !micHeard) { micHeard = true; setBadge("mic", "working", "ok"); }
+    if (micHeard) $("micInfo").textContent = peak > 0.85 ? "Very loud - move back a little or lower the volume." : peak < 0.15 ? "Working, but quiet - speak louder or move closer." : "Sounds good.";
+    else if (performance.now() - micStarted > 5000) {
+      setBadge("mic", "no sound", "warn");
+      $("micInfo").textContent = "No sound detected. Speak up, check the microphone is not muted (Windows Settings > System > Sound > Input), or pick another microphone.";
+    }
+    raf = requestAnimationFrame(meterLoop);
+  }
+  $("btnLoop").onclick = async () => {
+    if (!micStream || busy || typeof MediaRecorder === "undefined") return;
+    busy = true; const btn = $("btnLoop"); btn.disabled = true;
+    try {
+      const chunks = [], rec = new MediaRecorder(new MediaStream(micStream.getAudioTracks()));
+      rec.ondataavailable = (e) => e.data.size && chunks.push(e.data);
+      const done = new Promise((r) => (rec.onstop = r));
+      rec.start(); let left = 4;
+      btn.textContent = `Recording... speak now (${left})`;
+      const tick = setInterval(() => { left--; if (left > 0) btn.textContent = `Recording... speak now (${left})`; }, 1000);
+      await new Promise((r) => setTimeout(r, 4000)); clearInterval(tick); rec.stop(); await done;
+      btn.textContent = "Playing back...";
+      const a = new Audio(URL.createObjectURL(new Blob(chunks, { type: rec.mimeType || "audio/webm" })));
+      await applySink(a); await a.play();
+      await new Promise((r) => (a.onended = r));
+      $("micInfo").textContent = "Did you hear yourself? If not, check your speakers or choose another microphone / speaker.";
+    } catch (e) { $("micInfo").textContent = "Playback test failed: " + ((e && e.message) || e); }
+    btn.textContent = "Record 4 seconds and play it back"; btn.disabled = false; busy = false;
+  };
+
+  // ---------- speakers ----------
+  async function applySink(audio) {
+    const id = $("spkSel").value;
+    if (id && audio.setSinkId) { try { await audio.setSinkId(id); } catch (e) {} }
+  }
+  function toneWav(freq, sec) {
+    const rate = 44100, n = Math.floor(rate * sec), buf = new ArrayBuffer(44 + n * 2), v = new DataView(buf);
+    const w = (o, s) => [...s].forEach((c, i) => v.setUint8(o + i, c.charCodeAt(0)));
+    w(0, "RIFF"); v.setUint32(4, 36 + n * 2, true); w(8, "WAVE"); w(12, "fmt "); v.setUint32(16, 16, true); v.setUint16(20, 1, true);
+    v.setUint16(22, 1, true); v.setUint32(24, rate, true); v.setUint32(28, rate * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true);
+    w(36, "data"); v.setUint32(40, n * 2, true);
+    for (let i = 0; i < n; i++) {
+      const env = Math.min(1, i / 2000, (n - i) / 4000);
+      v.setInt16(44 + i * 2, Math.sin((2 * Math.PI * freq * i) / rate) * 0.35 * env * 32767, true);
+    }
+    return new Blob([buf], { type: "audio/wav" });
+  }
+  $("btnTone").onclick = async () => {
+    const btn = $("btnTone"); btn.disabled = true;
+    try {
+      const a = new Audio(URL.createObjectURL(toneWav(523, 1.2)));
+      await applySink(a); await a.play();
+      setBadge("spk", "played", "ok"); $("spkInfo").textContent = "Did you hear a short tone? If not, pick another speaker above or raise the Windows volume.";
+    } catch (e) { setBadge("spk", "problem", "bad"); $("spkInfo").textContent = "Could not play sound: " + ((e && e.message) || e); }
+    btn.disabled = false;
+  };
+
+  // ---------- wiring ----------
+  $("camSel").onchange = () => { store.set("camId", $("camSel").value); startCam(); };
+  $("micSel").onchange = () => { store.set("micId", $("micSel").value); startMic(); };
+  $("spkSel").onchange = () => store.set("spkId", $("spkSel").value);
+  $("btnAgain").onclick = () => init();
+  function shutdown() {
+    clearInterval(probeTimer); cancelAnimationFrame(raf); stop(camStream); stop(micStream);
+    if (ac) { try { ac.close(); } catch (e) {} }
+  }
+  $("btnDone").onclick = () => { shutdown(); location.href = "edumeet://leave"; setTimeout(() => window.close(), 300); };
+  window.addEventListener("beforeunload", shutdown);
+
+  async function init() {
+    if (!navigator.mediaDevices) {
+      for (const n of ["cam", "mic", "spk"]) setBadge(n, "unavailable", "bad");
+      $("camInfo").textContent = "Camera and microphone need a secure origin (https:// or localhost).";
+      return;
+    }
+    if (!("setSinkId" in HTMLMediaElement.prototype)) { $("spkSel").hidden = true; $("spkInfo").textContent = "This window always uses your default speaker."; }
+    await startCam(); await startMic();
+  }
+  init();
+})();
+</script>
+</body>
+</html>

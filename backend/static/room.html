@@ -1,0 +1,1345 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EduMeet Room</title>
+<style>
+  :root { --bg:#0f172a; --panel:#1e293b; --tile:#111827; --text:#e5e7eb; --muted:#94a3b8;
+          --accent:#2563eb; --danger:#dc2626; --ok:#16a34a; }
+  * { box-sizing: border-box; }
+  html, body { height:100%; margin:0; background:var(--bg); color:var(--text);
+               font-family:"Segoe UI", system-ui, sans-serif; }
+  body { display:flex; flex-direction:column; }
+  #app { flex:1; display:flex; min-height:0; }
+  #stage { flex:1; padding:12px; min-width:0; }
+  #grid { height:100%; display:grid; gap:10px; grid-auto-rows:1fr; }
+  .tile { position:relative; background:var(--tile); border-radius:12px; overflow:hidden; min-height:0; }
+  .tile video { width:100%; height:100%; object-fit:cover; background:#000; }
+  .tile.local video { transform:scaleX(-1); }
+  .tile.screen video { transform:none; object-fit:contain; }
+  .tile.bad { outline:2px solid var(--danger); }
+  .avatar { position:absolute; inset:0; display:none; align-items:center; justify-content:center; }
+  .avatar span { width:84px; height:84px; border-radius:50%; background:#334155; display:flex;
+                 align-items:center; justify-content:center; font-size:34px; font-weight:600; }
+  .tile.nocam .avatar { display:flex; }
+  .tile.nocam video { visibility:hidden; }
+  .name { position:absolute; left:8px; bottom:8px; background:rgba(0,0,0,.6); padding:3px 9px;
+          border-radius:6px; font-size:13px; }
+  .kick { position:absolute; right:8px; top:8px; background:rgba(0,0,0,.6); color:#fff; border:0;
+          border-radius:6px; padding:4px 8px; cursor:pointer; font-size:12px; }
+  .kick:hover { background:var(--danger); }
+  .ctlbtn { position:absolute; left:8px; top:8px; background:rgba(0,0,0,.6); color:#fff; border:0;
+            border-radius:6px; padding:4px 8px; cursor:pointer; font-size:12px; }
+  .ctlbtn:hover { background:var(--accent); }
+  .tile.controlling { outline:3px solid #f59e0b; cursor:crosshair; }
+  #recBadge { position:fixed; top:12px; right:16px; background:#dc2626; color:#fff; padding:5px 14px;
+              border-radius:999px; font-size:13px; font-weight:600; z-index:11; }
+  #recBadge::before { content:"\25CF  "; animation:blink 1.2s infinite; }
+  @keyframes blink { 50% { opacity:.25; } }
+  /* ---- AI panel + captions ---- */
+  #ccBox { position:absolute; left:50%; bottom:14px; transform:translateX(-50%); max-width:70%; background:rgba(0,0,0,.8); color:#fff;
+           padding:10px 16px; border-radius:10px; font-size:18px; line-height:1.45; z-index:9; text-align:center; }
+  #ccBox b { color:#93c5fd; }
+  #ccBadge { position:absolute; left:14px; top:14px; background:#2563eb; color:#fff; padding:4px 12px; border-radius:999px;
+             font-size:12px; font-weight:600; z-index:9; }
+  #ai { position:absolute; top:12px; right:12px; bottom:12px; width:410px; max-width:calc(100% - 24px); background:#1f2937;
+        border:1px solid #374151; border-radius:14px; z-index:8; display:flex; flex-direction:column; padding:12px; gap:8px; }
+  #ai[hidden] { display:none !important; }
+  #ai .aihead { display:flex; justify-content:space-between; align-items:center; font-size:16px; }
+  #ai button { background:#374151; color:#fff; border:0; border-radius:8px; padding:8px 12px; cursor:pointer; font-size:13px; }
+  #ai button:hover { background:#4b5563; } #ai button.sel { background:#2563eb; } #ai button:disabled { opacity:.55; cursor:wait; }
+  .aitabs, .airow { display:flex; gap:6px; flex-wrap:wrap; align-items:center; }
+  .aiinfo { font-size:12px; color:#fbbf24; }
+  #ai section { flex:1; min-height:0; display:flex; flex-direction:column; gap:8px; overflow-y:auto; }
+  #ai section[hidden] { display:none !important; }
+  #ai input[type=text], #ai input[type=number], #ai select { background:#0f172a; border:1px solid #374151; color:#e5e7eb;
+        border-radius:8px; padding:8px; font-size:13px; }
+  #askLog, #trLog, #sumOut, #tOut { flex:1; min-height:80px; overflow-y:auto; font-size:14px; line-height:1.5; }
+  .msgai { padding:8px 10px; border-radius:10px; margin-bottom:8px; white-space:pre-wrap; word-wrap:break-word; }
+  .msgai.user { background:#1d4ed8; margin-left:30px; } .msgai.bot { background:#374151; margin-right:30px; }
+  .trl { margin-bottom:8px; } .trl b { color:#93c5fd; font-size:12px; }
+  .sec h4 { margin:10px 0 4px; color:#93c5fd; } .sec ul { margin:0; padding-left:20px; }
+  #tOut .q { margin-bottom:12px; } #tOut .ans { display:none; color:#86efac; margin-top:4px; font-size:13px; }
+  #tOut.show .ans { display:block; } #tOut pre { white-space:pre-wrap; font-family:inherit; margin:0; }
+  #tOut h4 { margin:12px 0 6px; color:#93c5fd; } #tOut .ans { white-space:pre-wrap; }
+  #tMatBox { display:flex; flex-direction:column; gap:6px; }
+  #askForm { display:flex; gap:6px; } #askForm input { flex:1; }
+  .aifoot { font-size:11px; color:#9ca3af; }
+  /* ---- whiteboard ---- */
+  #stage { position:relative; }
+  #wb { position:absolute; inset:0; z-index:5; display:flex; gap:12px; padding:12px; background:#0f172a; }
+  #wb[hidden] { display:none !important; }
+  #wbTools { width:236px; flex:none; overflow-y:auto; background:#1f2937; border:1px solid #374151; border-radius:14px; padding:12px; }
+  .wbh { font-size:15px; font-weight:600; margin:12px 0 6px; } .wbh:first-child { margin-top:0; }
+  .wbgrid { display:grid; gap:6px; } .g2 { grid-template-columns:repeat(2,1fr); }
+  .g3 { grid-template-columns:repeat(3,1fr); } .g4 { grid-template-columns:repeat(4,1fr); }
+  #wb button { background-color:#374151; color:#fff; border:0; border-radius:8px; padding:6px 4px; cursor:pointer; font-size:12px;
+               display:flex; align-items:center; justify-content:center; min-height:38px;
+               background-image:linear-gradient(to right, rgba(37,99,235,.65) var(--dwell,0%), transparent var(--dwell,0%)); }
+  #wb button:hover { background-color:#4b5563; } #wb button.sel { background-color:#2563eb; }
+  #wb button:disabled { opacity:.5; cursor:wait; }
+  #wb .wbbig { width:100%; margin-top:10px; font-size:13px; }
+  .wbhelp { font-size:12px; color:#9ca3af; margin-top:8px; line-height:1.55; }
+  #wb select { width:100%; background:#374151; color:#fff; border:0; border-radius:8px; padding:8px; font-size:12px; }
+  #wbStage { flex:1; min-width:0; position:relative; display:flex; align-items:center; justify-content:center; }
+  #wbBoard { position:relative; background:#fff; border-radius:10px; overflow:hidden; }
+  #wbBoard canvas { position:absolute; inset:0; width:100%; height:100%; }
+  #wbLive { touch-action:none; cursor:crosshair; }
+  #wbGesture { position:absolute; left:10px; top:10px; background:rgba(0,0,0,.75); color:#fff; padding:6px 12px; border-radius:8px; font-size:14px; z-index:6; }
+  #wbCam { position:absolute; right:10px; bottom:10px; width:200px; height:150px; border-radius:8px; border:2px solid #334155; background:#000; z-index:6; }
+  #wbCursor { position:fixed; left:0; top:0; width:26px; height:26px; margin:-13px 0 0 -13px; border-radius:50%;
+              border:3px solid #fff; pointer-events:none; z-index:30; }
+  #wbCursor.g-draw { border-color:#ef4444; background:rgba(239,68,68,.25); } #wbCursor.g-hover { border-color:#3b82f6; }
+  #wbCursor.g-erase { width:46px; height:46px; margin:-23px 0 0 -23px; border-color:#9ca3af; } #wbCursor.g-fist { border-color:#f59e0b; }
+  #side { width:300px; background:var(--panel); display:flex; flex-direction:column; border-left:1px solid #334155; }
+  #side.hidden { display:none; }
+  #chatlog { flex:1; overflow-y:auto; padding:12px; font-size:14px; }
+  .msg { margin-bottom:10px; word-wrap:break-word; }
+  .msg b { color:#93c5fd; } .msg.mine b { color:#86efac; }
+  .msg.system { color:var(--muted); font-style:italic; font-size:12px; }
+  #chatform { display:flex; gap:6px; padding:10px; border-top:1px solid #334155; }
+  #chatinput { flex:1; background:#0f172a; border:1px solid #334155; color:var(--text);
+               padding:8px; border-radius:6px; }
+  #bar { display:flex; gap:10px; justify-content:center; padding:12px; background:var(--panel);
+         border-top:1px solid #334155; flex-wrap:wrap; }
+  button.ctl { background:#334155; color:#fff; border:0; border-radius:8px; padding:10px 16px;
+               cursor:pointer; font-size:14px; }
+  button.ctl:hover { background:#475569; }
+  button.ctl.off { background:var(--danger); }
+  button.ctl.on { background:var(--ok); }
+  button.ctl.leave { background:var(--danger); }
+  button.send { background:var(--accent); color:#fff; border:0; border-radius:6px; padding:8px 12px; cursor:pointer; }
+  [hidden] { display:none !important; }
+  #status { position:fixed; top:12px; left:50%; transform:translateX(-50%); background:rgba(15,23,42,.95);
+            border:1px solid #334155; padding:8px 16px; border-radius:8px; font-size:14px; display:none; z-index:10; }
+</style>
+</head>
+<body>
+<div id="app">
+  <main id="stage"><div id="grid"></div>
+    <section id="wb" hidden>
+      <aside id="wbTools">
+        <div class="wbh">Draw</div><div class="wbgrid g3" id="wbTool"></div>
+        <div class="wbh">Line width</div><div class="wbgrid g4" id="wbWidth"></div>
+        <div class="wbh">Shapes</div><div class="wbgrid g4" id="wbShapes"></div>
+        <div class="wbh">Color</div><div class="wbgrid g4" id="wbColors"></div>
+        <div class="wbh">Actions</div>
+        <div class="wbgrid g2">
+          <button data-dwell id="wbUndo">Undo</button><button data-dwell id="wbSave">Save image</button>
+          <button data-dwell data-host id="wbClear" hidden>Clear all</button><button data-dwell data-host id="wbLock" hidden>Lock board</button>
+        </div>
+        <div class="wbh">Camera for hand tracking</div><select id="wbCamSel"><option value="auto">Auto (meeting camera)</option></select>
+        <button data-dwell id="wbHandToggle" class="wbbig">Hand gestures: OFF</button>
+        <div class="wbhelp">&#9757; one finger = draw<br>&#9996; two fingers = move / pick (hold over a button)<br>&#128400; four fingers = erase<br>&#9994; fist (hold 1 s) = undo</div>
+        <button data-dwell id="wbClose" class="wbbig">Close whiteboard</button>
+      </aside>
+      <div id="wbStage">
+        <div id="wbBoard"><canvas id="wbCanvas" width="1280" height="720"></canvas><canvas id="wbLive" width="1280" height="720"></canvas></div>
+        <div id="wbGesture" hidden></div><canvas id="wbCam" width="200" height="150" hidden></canvas>
+      </div>
+      <div id="wbCursor" hidden></div>
+    </section>
+    <div id="ccBadge" hidden>CC - AI captions on</div>
+    <div id="ccBox" hidden></div>
+    <aside id="ai" hidden>
+      <div class="aihead"><b>AI assistant</b><button id="aiClose" title="Close">&times;</button></div>
+      <div class="aitabs">
+        <button data-tab="ask" class="sel">Ask AI</button><button data-tab="sum">Summary</button>
+        <button data-tab="tr">Transcript</button><button data-tab="teach" data-teacher hidden>Teacher tools</button>
+      </div>
+      <div id="aiStatus" class="aiinfo"></div>
+
+      <section data-pane="ask">
+        <div id="askLog"></div>
+        <form id="askForm"><input type="text" id="askInput" maxlength="1000" autocomplete="off" placeholder="Ask about the meeting or any topic"><button>Ask</button></form>
+      </section>
+
+      <section data-pane="sum" hidden>
+        <button id="btnSum">Summarize the meeting</button>
+        <div id="sumOut"></div>
+        <div class="airow"><button id="sumSave">Save to Files</button><button id="sumCopy">Copy</button></div>
+      </section>
+
+      <section data-pane="tr" hidden>
+        <label class="airow"><input type="checkbox" id="ccSend" checked> Send my voice for captions</label>
+        <label class="airow"><input type="checkbox" id="ccShow" checked> Show captions on screen</label>
+        <div id="trLog"></div>
+        <button id="btnTrDl">Download transcript</button>
+      </section>
+
+      <section data-pane="teach" hidden>
+        <b>1. Choose the source</b>
+        <select id="tSource">
+          <option value="transcript">Meeting transcript (captions)</option>
+          <option value="material">Uploaded file (PDF, text, audio, video)</option>
+          <option value="topic">Topic only</option>
+        </select>
+        <div id="tMatBox" hidden>
+          <div class="airow"><input type="file" id="tFile" accept=".pdf,.txt,.md,.csv,audio/*,video/*,.mp3,.wav,.m4a,.mp4,.mkv,.mov,.webm"><button id="btnUpload">Upload and read</button></div>
+          <div class="airow"><select id="tMat" style="flex:1"></select><button id="btnMatDel">Delete</button></div>
+          <div id="tJob" class="aiinfo"></div>
+        </div>
+        <input type="text" id="tTopic" maxlength="300" placeholder="Topic or focus (needed for Topic only)">
+        <b>2. Make</b>
+        <div class="airow">
+          <label>MCQ <input type="number" id="tMcq" value="5" min="0" max="20" style="width:64px"></label>
+          <label>Structured <input type="number" id="tStr" value="2" min="0" max="10" style="width:64px"></label>
+          <select id="tD"><option value="easy">easy</option><option value="medium" selected>medium</option><option value="hard">hard</option></select>
+        </div>
+        <div class="airow">
+          <button id="btnQuiz">Make questions</button><button id="btnNotes">Make lesson notes</button>
+          <label><input type="checkbox" id="tShow"> show answers</label>
+        </div>
+        <div id="tOut"></div>
+        <div class="airow"><button id="tSave">Save to Files</button><button id="tCopy">Copy</button></div>
+      </section>
+
+      <div class="aifoot">AI can make mistakes. Summaries, questions, quizzes and notes send the meeting transcript to Anthropic (Claude).</div>
+    </aside>
+  </main>
+  <aside id="side" class="hidden">
+    <div id="chatlog"></div>
+    <form id="chatform"><input id="chatinput" autocomplete="off" maxlength="2000" placeholder="Message everyone">
+      <button class="send">Send</button></form>
+  </aside>
+</div>
+<footer id="bar">
+  <button class="ctl" id="btnMic">Mute</button>
+  <button class="ctl" id="btnCam">Stop video</button>
+  <button class="ctl" id="btnShare">Share screen</button>
+  <button class="ctl" id="btnRemote">Remote control</button>
+  <button class="ctl" id="btnHand">Raise hand</button>
+  <button class="ctl" id="btnChat">Chat</button>
+  <button class="ctl" id="btnWb">Whiteboard</button>
+  <button class="ctl" id="btnCC" hidden>Captions</button>
+  <button class="ctl" id="btnAI">AI</button>
+  <button class="ctl" id="btnMuteAll" hidden>Mute all</button>
+  <button class="ctl" id="btnRec" hidden>Record</button>
+  <button class="ctl leave" id="btnLeave">Leave</button>
+  <button class="ctl leave" id="btnEnd" hidden>End for all</button>
+</footer>
+<div id="status"></div>
+<div id="recBadge" hidden>REC - this meeting is being recorded</div>
+
+<script>
+(() => {
+  "use strict";
+  const code  = decodeURIComponent(location.pathname.split("/").filter(Boolean).pop() || "");
+  const hashParams = new URLSearchParams(location.hash.slice(1));
+  const token = hashParams.get("token");
+  const wantCam = hashParams.get("cam") !== "0";
+  const wantMic = hashParams.get("mic") !== "0";
+  history.replaceState(null, "", location.pathname);          // hide the token from the visible URL
+
+  const $ = (id) => document.getElementById(id);
+  const grid = $("grid");
+  const peers = new Map();                 // peer_id -> { pc, tile, video, label, stream, pending[], info }
+  let ws, myId = null, myName = "You", isHost = false, iceServers = [];
+  let localStream = null, screenStream = null, handRaised = false, left = false;
+  let selfTile = null;
+  let bridge = null, controlTarget = null, controllerId = null;
+  let rec = null, uploading = false, acx = null;   // recording state
+
+  // ---------- helpers ----------
+  function setStatus(text, sticky = false) {
+    const el = $("status"); el.textContent = text; el.style.display = text ? "block" : "none";
+    if (text && !sticky) setTimeout(() => { if (el.textContent === text) el.style.display = "none"; }, 5000);
+  }
+  function send(obj) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj)); }
+  function layout() {
+    const n = Math.max(grid.children.length, 1);
+    const cols = n <= 1 ? 1 : n <= 4 ? 2 : n <= 9 ? 3 : 4;
+    grid.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+  }
+  function makeTile(id, name, local = false) {
+    const tile = document.createElement("div");
+    tile.className = "tile nocam" + (local ? " local" : "");
+    const video = document.createElement("video");
+    video.autoplay = true; video.playsInline = true; if (local) video.muted = true; else applySink(video);
+    const label = document.createElement("div"); label.className = "name"; label.textContent = name;
+    const avatar = document.createElement("div"); avatar.className = "avatar";
+    const initial = document.createElement("span"); initial.textContent = (name.trim()[0] || "?").toUpperCase();
+    avatar.append(initial);
+    tile.append(video, avatar, label);
+    let ctlBtn = null;
+    if (!local) {
+      ctlBtn = document.createElement("button"); ctlBtn.className = "ctlbtn"; ctlBtn.hidden = true;
+      ctlBtn.textContent = "Request control"; ctlBtn.onclick = () => requestControl(id); tile.append(ctlBtn);
+    }
+    if (!local && isHost) {
+      const k = document.createElement("button"); k.className = "kick"; k.textContent = "Remove";
+      k.onclick = () => { if (confirm(`Remove ${name} from the meeting?`)) send({ type: "kick", peer_id: id }); };
+      tile.append(k);
+    }
+    grid.append(tile); layout();
+    return { tile, video, label, initial, ctlBtn };
+  }
+  function addChat(name, text, mine = false) {
+    const log = $("chatlog"), div = document.createElement("div");
+    div.className = "msg" + (name === "system" ? " system" : mine ? " mine" : "");
+    if (name === "system") div.textContent = text;
+    else { const b = document.createElement("b"); b.textContent = name + ": "; div.append(b, document.createTextNode(text)); }
+    log.append(div); log.scrollTop = log.scrollHeight;
+  }
+  const videoSender = (pc) =>
+    (pc.getTransceivers().find((t) => t.receiver.track && t.receiver.track.kind === "video") || {}).sender;
+
+  // ---------- media ----------
+  const camTrack = () => (localStream && localStream.getVideoTracks()[0]) || null;
+  const videoActive = () => !!screenStream || !!camTrack();
+  function announceMedia() { send({ type: "media_state", cam: videoActive(), screen: !!screenStream }); }
+
+  function mediaError(e, what) {
+    switch (e && e.name) {
+      case "NotAllowedError": return `${what} is blocked. Windows: Settings > Privacy & security > ${what} > allow desktop apps.`;
+      case "NotFoundError": return `No ${what.toLowerCase()} found.`;
+      case "NotReadableError": return `${what} is being used by another app. Close it and try again.`;
+      default: return `${what} unavailable: ${(e && e.message) || e}`;
+    }
+  }
+  const pref = (k) => { try { return localStorage.getItem("edumeet." + k) || ""; } catch (e) { return ""; } };
+  // Uses the camera / microphone picked in "Test mic & camera"; falls back to the default if it was unplugged.
+  async function getMedia(kind, extra) {
+    const id = pref(kind === "audio" ? "micId" : "camId");
+    const make = (withId) => ({ [kind]: { ...(extra || {}), ...(withId && id ? { deviceId: { exact: id } } : {}) } });
+    try { return await navigator.mediaDevices.getUserMedia(make(true)); }
+    catch (e) {
+      if (id && e && (e.name === "OverconstrainedError" || e.name === "NotFoundError")) return await navigator.mediaDevices.getUserMedia(make(false));
+      throw e;
+    }
+  }
+  function applySink(v) { const id = pref("spkId"); if (id && v.setSinkId) v.setSinkId(id).catch(() => {}); }
+  const SECURE_MSG = "Camera/microphone need a secure origin (https:// or localhost).";
+
+  async function acquireAudio() {
+    if (!navigator.mediaDevices) { setStatus(SECURE_MSG, true); return null; }
+    try { return (await getMedia("audio")).getAudioTracks()[0]; }
+    catch (e) { setStatus(mediaError(e, "Microphone")); return null; }
+  }
+
+  // ---------- peers ----------
+  function createPeer(info, initiator) {
+    if (peers.has(info.peer_id)) return peers.get(info.peer_id);
+    const t = makeTile(info.peer_id, info.name + (info.hand_raised ? " \u270B" : ""));
+    t.tile.classList.toggle("nocam", !info.cam_on);
+    t.tile.classList.toggle("screen", !!info.screen_on); t.ctlBtn.hidden = !info.screen_on;
+    const pc = new RTCPeerConnection({ iceServers });
+    const entry = { pc, ...t, stream: new MediaStream(), pending: [], info };
+    peers.set(info.peer_id, entry);
+    t.video.srcObject = entry.stream;
+
+    const kinds = new Set();
+    if (localStream) for (const tr of localStream.getTracks()) { pc.addTrack(tr, localStream); kinds.add(tr.kind); }
+    // Without a local camera keep a sendrecv slot so screen-share can use it later without renegotiation.
+    if (!kinds.has("video")) pc.addTransceiver("video", { direction: "sendrecv" });
+    if (initiator && !kinds.has("audio")) pc.addTransceiver("audio", { direction: "recvonly" });
+
+    pc.onicecandidate = (e) => { if (e.candidate) send({ type: "signal", to: info.peer_id, data: { candidate: e.candidate } }); };
+    pc.ontrack = (e) => { entry.stream.addTrack(e.track); if (rec && e.track.kind === "audio") addRecAudio(e.track); };
+    pc.onconnectionstatechange = () => {
+      t.tile.classList.toggle("bad", pc.connectionState === "failed");
+      if (pc.connectionState === "failed") setStatus(`Connection to ${info.name} failed (a TURN server may be required).`);
+    };
+
+    if (screenStream) { const s = videoSender(pc); if (s) s.replaceTrack(screenStream.getVideoTracks()[0]).catch(() => {}); }
+    if (initiator) (async () => {
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      send({ type: "signal", to: info.peer_id, data: { sdp: pc.localDescription } });
+    })().catch(console.error);
+    return entry;
+  }
+  function removePeer(id) {
+    const e = peers.get(id); if (!e) return;
+    e.pc.close(); e.tile.remove(); peers.delete(id); layout();
+  }
+  async function onSignal(from, data) {
+    const e = peers.get(from); if (!e) return;
+    try {
+      if (data.sdp) {
+        await e.pc.setRemoteDescription(data.sdp);
+        for (const c of e.pending.splice(0)) await e.pc.addIceCandidate(c).catch(console.warn);
+        if (data.sdp.type === "offer") {
+          const answer = await e.pc.createAnswer();
+          await e.pc.setLocalDescription(answer);
+          send({ type: "signal", to: from, data: { sdp: e.pc.localDescription } });
+        }
+      } else if (data.candidate) {
+        if (e.pc.remoteDescription) await e.pc.addIceCandidate(data.candidate).catch(console.warn);
+        else e.pending.push(data.candidate);
+      }
+    } catch (err) { console.error("signal error", err); }
+  }
+
+  // ---------- server messages ----------
+  function handle(m) {
+    switch (m.type) {
+      case "welcome":
+        myId = m.peer_id; isHost = m.is_host; myName = m.you.name;
+        selfTile.label.textContent = myName + " (you)"; selfTile.initial.textContent = (myName.trim()[0] || "?").toUpperCase();
+        $("btnMuteAll").hidden = !isHost; $("btnEnd").hidden = !isHost; $("btnRec").hidden = !isHost;
+        $("recBadge").hidden = !m.recording;
+        document.querySelectorAll("#wb [data-host]").forEach((b) => (b.hidden = !isHost));
+        $("btnCC").hidden = !isHost; document.querySelectorAll("#ai [data-teacher]").forEach((b) => (b.hidden = !isHost));
+        if (m.captions) onCaptionsState(true, "");
+        for (const p of m.peers) createPeer(p, true);
+        announceMedia();
+        setStatus(m.peers.length ? "" : "You are the first one here. Share the meeting code!");
+        break;
+      case "peer_joined": createPeer(m.peer, false); addChat("system", `${m.peer.name} joined`); break;
+      case "peer_left": { const e = peers.get(m.peer_id); if (e) addChat("system", `${e.info.name} left`); removePeer(m.peer_id); break; }
+      case "signal": onSignal(m.from, m.data); break;
+      case "chat": addChat(m.name, m.text, m.from === myId); break;
+      case "media_state": {
+        const e = peers.get(m.peer_id);
+        if (e) { e.tile.classList.toggle("nocam", !m.cam); e.tile.classList.toggle("screen", !!m.screen); e.ctlBtn.hidden = !m.screen; }
+        break;
+      }
+      case "control_request": onControlRequest(m); break;
+      case "control_response": onControlResponse(m); break;
+      case "control_input": if (bridge && controllerId === m.from) bridge.inject(JSON.stringify(m.data), m.from); break;
+      case "control_stopped": onControlStopped(m); break;
+      case "captions": onCaptionsState(!!m.on, m.by || "The host"); break;
+      case "caption":
+        ai.lines.push({ name: m.name, text: m.text, ts: m.ts }); if (ai.loaded) trAdd(ai.lines[ai.lines.length - 1]);
+        showCaption(m.name, m.text); break;
+      case "wb_state": wbItems = m.items || []; wbLocked = !!m.locked; wbRedraw(); wbRefresh(); break;
+      case "wb_item": {
+        wbItems.push(m.item); drawItem(wbCtx, m.item);
+        const e = peers.get(m.from);
+        if (!wbOpen && performance.now() - wbNote > 30000) { wbNote = performance.now(); addChat("system", `${e ? e.info.name : "Someone"} is drawing on the whiteboard - click Whiteboard to view.`); }
+        break;
+      }
+      case "wb_remove": wbItems = wbItems.filter((i) => i.id !== m.id); wbRedraw(); break;
+      case "wb_clear": wbItems = []; wbRedraw(); addChat("system", `${m.by} cleared the whiteboard.`); break;
+      case "wb_lock": wbLocked = !!m.locked; wbRefresh(); addChat("system", m.locked ? "The host locked the whiteboard." : "The whiteboard is unlocked."); break;
+      case "recording":
+        $("recBadge").hidden = !m.on;
+        addChat("system", m.on ? `${m.by} started recording this meeting. By staying in it you agree to be recorded.` : `${m.by} stopped recording.`);
+        if (m.on) setStatus(`${m.by} started recording this meeting.`);
+        if (m.peer_id === myId) { if (m.on) beginCapture(); else endCapture(); }
+        break;
+      case "hand": { const e = peers.get(m.peer_id); if (e) e.label.textContent = e.info.name + (m.raised ? " \u270B" : ""); break; }
+      case "mute_all": setMic(false); addChat("system", `${m.by} muted everyone`); break;
+      case "meeting_ended": setStatus("The host ended this meeting.", true); finish(2000); break;
+      case "kicked": setStatus("You were removed from the meeting.", true); finish(2000); break;
+      case "error": addChat("system", m.message); break;
+    }
+  }
+  function connect() {
+    const proto = location.protocol === "https:" ? "wss" : "ws";
+    ws = new WebSocket(`${proto}://${location.host}/ws/meetings/${encodeURIComponent(code)}?token=${encodeURIComponent(token)}`);
+    ws.onmessage = (ev) => handle(JSON.parse(ev.data));
+    ws.onclose = (ev) => {
+      if (left) return;
+      const why = { 4401: "Your session expired - sign in again.", 4404: "Meeting not found.", 4410: "This meeting has already ended.", 4409: "This account is already in this meeting (another window or device)." };
+      if (why[ev.code]) setStatus(why[ev.code], true);
+      else if (ev.code !== 1000) setStatus("Disconnected from the meeting.", true);
+    };
+  }
+
+  // ---------- controls ----------
+  function setMic(on) {
+    if (!localStream) return;
+    localStream.getAudioTracks().forEach((t) => (t.enabled = on));
+    $("btnMic").textContent = on ? "Mute" : "Unmute"; $("btnMic").classList.toggle("off", !on);
+  }
+  $("btnMic").onclick = () => { const t = localStream && localStream.getAudioTracks()[0]; if (t) setMic(!t.enabled); };
+
+  function updateCamButton() {
+    const on = !!camTrack();
+    $("btnCam").textContent = on ? "Stop video" : "Start video";
+    $("btnCam").classList.toggle("off", !on);
+  }
+  async function startCamera() {
+    if (!navigator.mediaDevices) { setStatus(SECURE_MSG, true); return; }
+    let track;
+    try {
+      const s = await getMedia("video", { width: { ideal: 1280 }, height: { ideal: 720 } });
+      track = s.getVideoTracks()[0];
+    } catch (e) { setStatus(mediaError(e, "Camera")); updateCamButton(); return; }
+    localStream.addTrack(track);
+    if (!screenStream) await replaceVideo(track);   // while sharing, the screen keeps priority
+    updateCamButton(); announceMedia();
+  }
+  async function stopCamera() {
+    const t = camTrack(); if (!t) return;
+    t.stop();                                        // releases the camera (light turns off)
+    localStream.removeTrack(t);
+    if (!screenStream) await replaceVideo(null);
+    updateCamButton(); announceMedia();
+  }
+  $("btnCam").onclick = async () => { $("btnCam").disabled = true; try { camTrack() ? await stopCamera() : await startCamera(); } finally { $("btnCam").disabled = false; } };
+
+  async function replaceVideo(track) {
+    for (const e of peers.values()) { const s = videoSender(e.pc); if (s) await s.replaceTrack(track).catch(() => {}); }
+    const tracks = [...(localStream ? localStream.getAudioTracks() : []), ...(track ? [track] : [])];
+    selfTile.video.srcObject = new MediaStream(tracks);
+    selfTile.tile.classList.toggle("screen", !!screenStream);
+    selfTile.tile.classList.toggle("nocam", !track);
+  }
+  async function stopShare() {
+    if (!screenStream) return;
+    screenStream.getTracks().forEach((t) => t.stop()); screenStream = null;
+    $("btnShare").textContent = "Share screen"; $("btnShare").classList.remove("on");
+    await replaceVideo(camTrack());
+    announceMedia();
+  }
+  $("btnShare").onclick = async () => {
+    if (screenStream) return stopShare();
+    try { screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true }); }
+    catch (e) { setStatus("Screen sharing is unavailable: " + e.message); return; }
+    const track = screenStream.getVideoTracks()[0];
+    track.onended = stopShare;
+    $("btnShare").textContent = "Stop sharing"; $("btnShare").classList.add("on");
+    await replaceVideo(track);
+    announceMedia();
+  };
+  $("btnHand").onclick = () => {
+    handRaised = !handRaised; send({ type: "raise_hand", raised: handRaised });
+    $("btnHand").textContent = handRaised ? "Lower hand" : "Raise hand"; $("btnHand").classList.toggle("on", handRaised);
+    selfTile.label.textContent = myName + " (you)" + (handRaised ? " \u270B" : "");
+  };
+  $("btnChat").onclick = () => $("side").classList.toggle("hidden");
+  $("chatform").onsubmit = (e) => {
+    e.preventDefault(); const i = $("chatinput"), text = i.value.trim();
+    if (text) { send({ type: "chat", text }); i.value = ""; }
+  };
+  $("btnMuteAll").onclick = () => { send({ type: "mute_all" }); addChat("system", "You muted everyone"); };
+  $("btnEnd").onclick = () => { if (confirm("End this meeting for everyone?")) send({ type: "end_meeting" }); };
+  $("btnLeave").onclick = () => finish(0);
+
+  // ---------- AI: live captions, transcript, summary + action items, assistant, quiz + notes ----------
+  const ai = { open: false, loaded: false, history: [], lines: [], ccOn: false, running: false, failed: false,
+               inflight: 0, peak: 0, fade: 0, lastText: "", lastName: "", sum: null };
+  const mk = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; };
+  const clock = (iso) => { try { return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }); } catch (e) { return ""; } };
+  function aiNote(text) { $("aiStatus").textContent = text || ""; if (text) setStatus(text); }
+  async function aiCall(path, body) {
+    const r = await fetch(`/api/ai/${path}/${encodeURIComponent(code)}`, {
+      method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + token }, body: JSON.stringify(body || {}),
+    });
+    let data = null; try { data = await r.json(); } catch (e) {}
+    if (!r.ok) throw new Error((data && data.detail) || "HTTP " + r.status);
+    return data;
+  }
+  function copyText(text) {
+    const ta = document.createElement("textarea"); ta.value = text; ta.style.cssText = "position:fixed;opacity:0";
+    document.body.append(ta); ta.select();
+    try { document.execCommand("copy"); setStatus("Copied."); } catch (e) { setStatus("Copy failed."); }
+    ta.remove();
+  }
+  function downloadText(name, text) {
+    const url = URL.createObjectURL(new Blob([text], { type: "text/plain" })), a = document.createElement("a");
+    a.href = url; a.download = name; document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 60000);
+  }
+  async function saveToFiles(name, text) {
+    if (!text) { setStatus("Nothing to save yet."); return; }
+    try {
+      const fd = new FormData(); fd.append("file", new Blob([text], { type: "text/plain" }), name);
+      const r = await fetch(`/api/meetings/${encodeURIComponent(code)}/files`, { method: "POST", headers: { Authorization: "Bearer " + token }, body: fd });
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      setStatus("Saved - find it under Files... in the meetings list.");
+    } catch (e) { setStatus("Could not save: " + e.message); }
+  }
+
+  // ----- panel
+  function aiTab(name) {
+    document.querySelectorAll("#ai [data-tab]").forEach((b) => b.classList.toggle("sel", b.dataset.tab === name));
+    document.querySelectorAll("#ai [data-pane]").forEach((p) => (p.hidden = p.dataset.pane !== name));
+    if (name === "tr" && !ai.loaded) loadTranscript();
+  }
+  document.querySelectorAll("#ai [data-tab]").forEach((b) => (b.onclick = () => aiTab(b.dataset.tab)));
+  async function openAi() {
+    ai.open = true; $("ai").hidden = false; $("btnAI").classList.add("on");
+    try {
+      const r = await fetch("/api/ai/status", { headers: { Authorization: "Bearer " + token } });
+      if (r.ok) {
+        const s = await r.json(), notes = [];
+        if (!s.claude) notes.push("Claude is not set up (ANTHROPIC_API_KEY in .env): Ask AI, Summary and Teacher tools are off.");
+        if (!s.whisper) notes.push("Speech recognition is not installed (pip install faster-whisper): captions are off.");
+        $("aiStatus").textContent = notes.join(" ");
+      }
+    } catch (e) {}
+  }
+  function closeAi() { ai.open = false; $("ai").hidden = true; $("btnAI").classList.remove("on"); }
+  $("btnAI").onclick = () => (ai.open ? closeAi() : openAi());
+  $("aiClose").onclick = closeAi;
+
+  // ----- ask the assistant
+  function askAdd(role, text) {
+    const d = mk("div", "msgai " + role, text); $("askLog").append(d); $("askLog").scrollTop = $("askLog").scrollHeight; return d;
+  }
+  $("askForm").onsubmit = async (e) => {
+    e.preventDefault();
+    const q = $("askInput").value.trim(); if (!q) return;
+    $("askInput").value = ""; askAdd("user", q);
+    const wait = askAdd("bot", "Thinking...");
+    try {
+      const r = await aiCall("ask", { question: q, history: ai.history.slice(-6) });
+      wait.textContent = r.answer; ai.history.push({ role: "user", content: q }, { role: "assistant", content: r.answer });
+    } catch (err) { wait.textContent = "Could not answer: " + err.message; }
+  };
+
+  // ----- summary + action items
+  const section = (title, items) => {
+    if (!items || !items.length) return null;
+    const box = mk("div", "sec"), ul = mk("ul"); box.append(mk("h4", "", title));
+    items.forEach((t) => ul.append(mk("li", "", t))); box.append(ul); return box;
+  };
+  function summaryText(s) {
+    const L = (t, a) => (a && a.length ? `\n${t}\n` + a.map((x) => "- " + x).join("\n") + "\n" : "");
+    return `Meeting summary - ${code}\n\n${s.summary}\n` + L("Key points", s.key_points) + L("Decisions", s.decisions) +
+      L("Action items", s.action_items.map((a) => `${a.task} (owner: ${a.owner}, due: ${a.due})`)) + L("Open questions", s.open_questions);
+  }
+  function renderSummary(s) {
+    const out = $("sumOut"); out.textContent = ""; ai.sum = s;
+    out.append(mk("p", "", s.summary || "(no summary)"));
+    for (const sec of [section("Key points", s.key_points), section("Decisions", s.decisions),
+         section("Action items", s.action_items.map((a) => `${a.task} - owner: ${a.owner}, due: ${a.due}`)), section("Open questions", s.open_questions)]) if (sec) out.append(sec);
+  }
+  $("btnSum").onclick = async () => {
+    const b = $("btnSum"); b.disabled = true; b.textContent = "Summarizing...";
+    try { renderSummary(await aiCall("summary")); } catch (e) { $("sumOut").textContent = "Could not summarize: " + e.message; }
+    b.disabled = false; b.textContent = "Summarize the meeting";
+  };
+  $("sumSave").onclick = () => ai.sum && saveToFiles(`Summary-${code}.txt`, summaryText(ai.sum));
+  $("sumCopy").onclick = () => ai.sum && copyText(summaryText(ai.sum));
+
+  // ----- transcript
+  function trAdd(l) {
+    const row = mk("div", "trl"); row.append(mk("b", "", `${l.name}  ${clock(l.ts)}`), mk("div", "", l.text));
+    $("trLog").append(row); $("trLog").scrollTop = $("trLog").scrollHeight;
+  }
+  async function loadTranscript() {
+    ai.loaded = true;
+    try {
+      const r = await fetch(`/api/ai/transcript/${encodeURIComponent(code)}`, { headers: { Authorization: "Bearer " + token } });
+      if (r.ok) { ai.lines = (await r.json()).map((x) => ({ name: x.speaker, text: x.text, ts: x.ts })); $("trLog").textContent = ""; ai.lines.forEach(trAdd); }
+    } catch (e) {}
+  }
+  $("btnTrDl").onclick = async () => {
+    if (!ai.loaded) await loadTranscript();
+    if (!ai.lines.length) { setStatus("The transcript is empty."); return; }
+    downloadText(`Transcript-${code}.txt`, ai.lines.map((l) => `[${clock(l.ts)}] ${l.name}: ${l.text}`).join("\n"));
+  };
+
+  // ----- teacher tools (host / admin): questions from transcript, an uploaded file, or a topic
+  const authH = () => ({ Authorization: "Bearer " + token });
+  const teachSource = () => ({ source: $("tSource").value, material_id: +$("tMat").value || null, topic: $("tTopic").value });
+  function questionsText(res) {
+    let t = `${res.title}\n`;
+    if (res.mcq.length) {
+      t += "\nSECTION A - MULTIPLE CHOICE\n\n" + res.mcq.map((x, i) =>
+        `${i + 1}. ${x.question}\n` + x.options.map((o, j) => `   ${"ABCDEF"[j]}) ${o}`).join("\n") +
+        `\n   Answer: ${"ABCDEF"[x.answer_index]}${x.explanation ? " - " + x.explanation : ""}\n`).join("\n");
+    }
+    if (res.structured.length) {
+      t += "\nSECTION B - STRUCTURED QUESTIONS\n\n" + res.structured.map((q, i) =>
+        `${i + 1}. ${q.stem}  [${q.total_marks} marks]\n` + q.parts.map((p) =>
+          `   ${p.label} ${p.question}  [${p.marks}]\n      Model answer: ${p.model_answer}` +
+          (p.marking_points.length ? `\n      Marking points: ${p.marking_points.join("; ")}` : "")).join("\n")).join("\n\n") + "\n";
+    }
+    return t;
+  }
+  function renderQuestions(res) {
+    const out = $("tOut"); out.textContent = ""; out.append(mk("h4", "", res.title || "Questions"));
+    if (res.mcq.length) {
+      out.append(mk("h4", "", "Multiple-choice questions"));
+      res.mcq.forEach((x, i) => {
+        const box = mk("div", "q"), ol = mk("ol"); ol.type = "A";
+        box.append(mk("div", "", `${i + 1}. ${x.question}`));
+        x.options.forEach((o) => ol.append(mk("li", "", o))); box.append(ol);
+        box.append(mk("div", "ans", `Answer: ${"ABCDEF"[x.answer_index]}${x.explanation ? " - " + x.explanation : ""}`));
+        out.append(box);
+      });
+    }
+    if (res.structured.length) {
+      out.append(mk("h4", "", "Structured questions"));
+      res.structured.forEach((q, i) => {
+        const box = mk("div", "q");
+        box.append(mk("div", "", `${i + 1}. ${q.stem}  [${q.total_marks} marks]`));
+        q.parts.forEach((p) => {
+          box.append(mk("div", "", `${p.label} ${p.question}  [${p.marks}]`));
+          box.append(mk("div", "ans", "Model answer: " + p.model_answer + (p.marking_points.length ? "\nMarking points: " + p.marking_points.join("; ") : "")));
+        });
+        out.append(box);
+      });
+    }
+  }
+  async function teacherRun(btn, label, fn) {
+    btn.disabled = true; btn.textContent = "Working...";
+    try { await fn(); } catch (e) { $("tOut").textContent = "Could not do that: " + e.message; }
+    btn.disabled = false; btn.textContent = label;
+  }
+  $("btnQuiz").onclick = () => teacherRun($("btnQuiz"), "Make questions", async () => {
+    const res = await aiCall("questions", { ...teachSource(), mcq_count: Math.max(0, +$("tMcq").value || 0),
+      structured_count: Math.max(0, +$("tStr").value || 0), difficulty: $("tD").value });
+    renderQuestions(res); ai.lastText = questionsText(res); ai.lastName = `Questions-${code}.txt`;
+  });
+  $("btnNotes").onclick = () => teacherRun($("btnNotes"), "Make lesson notes", async () => {
+    const r = await aiCall("notes", { ...teachSource(), focus: $("tTopic").value });
+    const out = $("tOut"); out.textContent = ""; out.append(mk("pre", "", r.markdown));
+    ai.lastText = r.markdown; ai.lastName = `Lesson-notes-${code}.md`;
+  });
+  $("tShow").onchange = () => $("tOut").classList.toggle("show", $("tShow").checked);
+  $("tSave").onclick = () => saveToFiles(ai.lastName, ai.lastText);
+  $("tCopy").onclick = () => ai.lastText && copyText(ai.lastText);
+
+  // ----- uploaded files: PDF / text are read, audio / video are transcribed on this computer (can take a while)
+  async function loadMaterials(selectId) {
+    const sel = $("tMat");
+    try {
+      const r = await fetch(`/api/ai/materials/${encodeURIComponent(code)}`, { headers: authH() });
+      if (!r.ok) return;
+      const list = await r.json(); sel.textContent = "";
+      list.forEach((m) => sel.add(new Option(`${m.name} (${m.kind}, ${m.words} words)`, m.id)));
+      if (selectId) sel.value = selectId;
+    } catch (e) {}
+  }
+  $("tSource").onchange = () => { $("tMatBox").hidden = $("tSource").value !== "material"; if (!$("tMatBox").hidden) loadMaterials(); };
+  async function pollJob(id) {
+    for (;;) {
+      await new Promise((r) => setTimeout(r, 1500));
+      const r = await fetch(`/api/ai/job/${id}`, { headers: authH() }), j = await r.json();
+      if (!r.ok) throw new Error(j.detail || "HTTP " + r.status);
+      if (j.status === "error") throw new Error(j.error);
+      if (j.status === "done") { $("tJob").textContent = `Ready: ${j.name} (${j.words} words). Now press Make questions.`; await loadMaterials(j.material_id); return; }
+      $("tJob").textContent = `${j.message || "Working..."}${j.progress ? " " + Math.round(j.progress * 100) + "%" : ""}`;
+    }
+  }
+  $("btnUpload").onclick = async () => {
+    const f = $("tFile").files[0];
+    if (!f) { setStatus("Choose a file first."); return; }
+    const b = $("btnUpload"); b.disabled = true;
+    try {
+      $("tJob").textContent = `Uploading ${f.name} (${(f.size / 1048576).toFixed(1)} MB)...`;
+      const fd = new FormData(); fd.append("file", f, f.name);
+      const r = await fetch(`/api/ai/material/${encodeURIComponent(code)}`, { method: "POST", headers: authH(), body: fd });
+      const d = await r.json().catch(() => null);
+      if (!r.ok) throw new Error((d && d.detail) || "HTTP " + r.status);
+      await pollJob(d.job_id);
+    } catch (e) { $("tJob").textContent = "Could not read the file: " + e.message; }
+    b.disabled = false;
+  };
+  $("btnMatDel").onclick = async () => {
+    const id = +$("tMat").value; if (!id) return;
+    await fetch(`/api/ai/materials/${encodeURIComponent(code)}/${id}`, { method: "DELETE", headers: authH() }).catch(() => {});
+    $("tJob").textContent = ""; loadMaterials();
+  };
+
+  // ----- live captions: every person's own microphone is cut into ~7 s chunks and transcribed on the server
+  function showCaption(name, text) {
+    if (!$("ccShow").checked) return;
+    const box = $("ccBox"); box.hidden = false;
+    const row = mk("div"); row.append(mk("b", "", name + ": "), document.createTextNode(text)); box.append(row);
+    while (box.children.length > 2) box.firstChild.remove();
+    clearTimeout(ai.fade); ai.fade = setTimeout(() => { box.hidden = true; box.textContent = ""; }, 9000);
+  }
+  function onCaptionsState(on, by) {
+    ai.ccOn = on; ai.failed = false;
+    $("btnCC").classList.toggle("on", on); $("btnCC").textContent = on ? "Stop captions" : "Captions";
+    $("ccBadge").hidden = !on;
+    if (on) {
+      if (by) addChat("system", `${by} turned on AI captions. While they are on, your voice is transcribed (opt out: AI > Transcript > untick "Send my voice").`);
+      startCC();
+    } else { if (by) addChat("system", "AI captions are off."); stopCC(); $("ccBox").hidden = true; }
+  }
+  $("btnCC").onclick = () => { getAcx().resume().catch(() => {}); send({ type: "captions", on: !ai.ccOn }); };
+  function recordChunk(stream, mime, ms) {
+    return new Promise((resolve) => {
+      let rec; const parts = [];
+      try { rec = new MediaRecorder(stream, mime ? { mimeType: mime } : {}); } catch (e) { resolve(null); return; }
+      rec.ondataavailable = (e) => e.data && e.data.size && parts.push(e.data);
+      rec.onstop = () => resolve(new Blob(parts, { type: rec.mimeType || "audio/webm" }));
+      rec.start(); setTimeout(() => { try { rec.stop(); } catch (e) { resolve(null); } }, ms);
+    });
+  }
+  async function uploadChunk(blob) {
+    const fd = new FormData(); fd.append("file", blob, "chunk.webm");
+    const r = await fetch(`/api/ai/transcribe/${encodeURIComponent(code)}`, { method: "POST", headers: { Authorization: "Bearer " + token }, body: fd });
+    if (r.ok || r.status === 429) return;                      // 429 = server busy: just skip this chunk
+    let d = ""; try { d = (await r.json()).detail; } catch (e) {}
+    if (r.status === 503) { ai.failed = true; aiNote("Captions unavailable: " + d); }
+  }
+  async function startCC() {
+    if (ai.running || !ai.ccOn) return;
+    const track = localStream && localStream.getAudioTracks()[0];
+    if (!track) { aiNote("No microphone, so your speech is not transcribed."); return; }
+    if (typeof MediaRecorder === "undefined") return;
+    ai.running = true;
+    const stream = new MediaStream([track]);
+    let analyser = null, buf = null, src = null;
+    try {
+      const ac = getAcx(); ac.resume().catch(() => {});
+      analyser = ac.createAnalyser(); analyser.fftSize = 1024; src = ac.createMediaStreamSource(stream); src.connect(analyser);
+      buf = new Uint8Array(analyser.fftSize);
+    } catch (e) {}
+    const meter = setInterval(() => {                           // silent chunks are not uploaded
+      if (!analyser) { ai.peak = 1; return; }
+      analyser.getByteTimeDomainData(buf); let s = 0; for (const b of buf) { const x = (b - 128) / 128; s += x * x; }
+      ai.peak = Math.max(ai.peak, Math.sqrt(s / buf.length));
+    }, 100);
+    const mime = ["audio/webm;codecs=opus", "audio/webm"].find((t) => MediaRecorder.isTypeSupported(t)) || "";
+    try {
+      while (ai.running && ai.ccOn) {
+        ai.peak = 0;
+        const blob = await recordChunk(stream, mime, 7000);
+        if (!ai.running || !ai.ccOn) break;
+        if (blob && blob.size > 2000 && ai.peak > 0.015 && track.enabled && $("ccSend").checked && ai.inflight < 2 && !ai.failed) {
+          ai.inflight++; uploadChunk(blob).catch(() => {}).finally(() => { ai.inflight--; });
+        }
+      }
+    } finally { clearInterval(meter); try { src && src.disconnect(); } catch (e) {} ai.running = false; }
+  }
+  function stopCC() { ai.running = false; }
+
+  // ---------- whiteboard (shared live; optional hand-gesture drawing with MediaPipe Hand Landmarker) ----------
+  const WB_W = 1280, WB_H = 720;
+  const MP_BASE = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
+  const MP_MODEL = "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task";
+  const WB_COLORS = ["#111827", "#dc2626", "#2563eb", "#16a34a", "#f59e0b", "#7c3aed", "#db2777", "#ffffff"];
+  const SHAPE_GRID = [["line", 0], ["rect", 0], ["circle", 0], ["diamond", 0], ["arrow", 0], ["rect", 1], ["circle", 1], ["diamond", 1], ["darrow", 0], ["rect", 2], ["circle", 2], ["diamond", 2]];
+  const SHAPE_PATHS = {
+    line: '<path d="M5 19L19 5"/>', arrow: '<path d="M5 19L19 5M9 5h10v10"/>', darrow: '<path d="M5 19L19 5M9 5h10v10M5 9v10h10"/>',
+    rect: '<rect x="3" y="6" width="18" height="12" rx="1.5"/>', circle: '<circle cx="12" cy="12" r="8.5"/>', diamond: '<path d="M12 3l9 9-9 9-9-9z"/>',
+  };
+  const wbCanvas = $("wbCanvas"), wbCtx = wbCanvas.getContext("2d"), wbLive = $("wbLive"), liveCtx = wbLive.getContext("2d");
+  let wbOpen = false, wbItems = [], wbLocked = false, wbTool = "pen", wbShape = "rect", wbFill = 0, wbColor = "#111827", wbWidth = 6;
+  let wbCur = null, wbSeq = 0, wbNote = 0, wbLockMsg = 0;
+  const hand = { on: false, landmarker: null, video: null, stream: null, own: false, raf: 0, lastRun: 0, lastTs: 0, frames: 0, fps: 0, fpsAt: 0, errors: 0, label: "", blank: false, sm: null,
+                 gesture: "none", pending: "none", count: 0, dwellEl: null, dwellSince: 0, dwellFired: false, fistSince: 0, lastUndo: 0 };
+  const GESTURE_TEXT = { none: "No hand detected - hold your hand 40-60 cm from the camera", idle: "Show one finger to draw", draw: "\u261D Drawing", hover: "\u270C Moving - hold over a button to pick it",
+                         erase: "\u{1F590} Erasing", fist: "\u270A Hold to undo" };
+
+  // ----- drawing primitives (items use coordinates 0..1 so every screen size agrees)
+  function arrowHead(c, tip, ang, size) {
+    c.beginPath();
+    c.moveTo(tip[0], tip[1]); c.lineTo(tip[0] - size * Math.cos(ang - 0.5), tip[1] - size * Math.sin(ang - 0.5));
+    c.moveTo(tip[0], tip[1]); c.lineTo(tip[0] - size * Math.cos(ang + 0.5), tip[1] - size * Math.sin(ang + 0.5));
+    c.stroke();
+  }
+  function drawItem(c, it) {
+    const pts = it.pts.map(([x, y]) => [x * WB_W, y * WB_H]);
+    c.save(); c.lineCap = "round"; c.lineJoin = "round"; c.lineWidth = it.width;
+    c.strokeStyle = it.tool === "eraser" ? "#ffffff" : it.color; c.fillStyle = it.color;
+    if (it.tool === "shape") {
+      const a = pts[0], b = pts[1] || pts[0], x = Math.min(a[0], b[0]), y = Math.min(a[1], b[1]), w = Math.abs(a[0] - b[0]), h = Math.abs(a[1] - b[1]);
+      c.beginPath();
+      if (it.shape === "line" || it.shape === "arrow" || it.shape === "darrow") {
+        c.moveTo(a[0], a[1]); c.lineTo(b[0], b[1]); c.stroke();
+        const ang = Math.atan2(b[1] - a[1], b[0] - a[0]), size = Math.max(16, it.width * 4);
+        if (it.shape !== "line") arrowHead(c, b, ang, size);
+        if (it.shape === "darrow") arrowHead(c, a, ang + Math.PI, size);
+      } else {
+        if (it.shape === "rect") c.rect(x, y, w, h);
+        else if (it.shape === "circle") c.ellipse(x + w / 2, y + h / 2, w / 2, h / 2, 0, 0, Math.PI * 2);
+        else { c.moveTo(x + w / 2, y); c.lineTo(x + w, y + h / 2); c.lineTo(x + w / 2, y + h); c.lineTo(x, y + h / 2); c.closePath(); }
+        if (it.fill === 1) { c.globalAlpha = 0.3; c.fill(); c.globalAlpha = 1; } else if (it.fill === 2) c.fill();
+        c.stroke();
+      }
+    } else {
+      if (it.tool === "highlighter") c.globalAlpha = 0.35;
+      c.beginPath(); c.moveTo(pts[0][0], pts[0][1]);
+      for (let i = 1; i < pts.length - 1; i++) c.quadraticCurveTo(pts[i][0], pts[i][1], (pts[i][0] + pts[i + 1][0]) / 2, (pts[i][1] + pts[i + 1][1]) / 2);
+      if (pts.length > 1) c.lineTo(pts[pts.length - 1][0], pts[pts.length - 1][1]); else c.lineTo(pts[0][0] + 0.1, pts[0][1]);
+      c.stroke();
+    }
+    c.restore();
+  }
+  function wbRedraw() { wbCtx.fillStyle = "#ffffff"; wbCtx.fillRect(0, 0, WB_W, WB_H); for (const it of wbItems) drawItem(wbCtx, it); }
+  function wbPreview() { liveCtx.clearRect(0, 0, WB_W, WB_H); if (wbCur) drawItem(liveCtx, wbCur); }
+
+  // ----- one stroke API used by both the mouse and the hand
+  function wbBegin(pt, forceEraser) {
+    if (wbLocked && !isHost) {
+      if (performance.now() - wbLockMsg > 3000) { wbLockMsg = performance.now(); setStatus("The host has locked the whiteboard."); }
+      return;
+    }
+    const tool = forceEraser ? "eraser" : wbTool;
+    const width = forceEraser ? 44 : tool === "eraser" ? wbWidth * 5 : tool === "highlighter" ? wbWidth * 3 : wbWidth;
+    wbCur = { id: `${myId}-${++wbSeq}`, owner: myId, tool, color: wbColor, width, pts: [pt] };
+    if (tool === "shape") { wbCur.shape = wbShape; wbCur.fill = wbFill; wbCur.pts = [pt, pt]; }
+    wbPreview();
+  }
+  function wbMove(pt) {
+    if (!wbCur) return;
+    if (wbCur.tool === "shape") wbCur.pts[1] = pt;
+    else {
+      const l = wbCur.pts[wbCur.pts.length - 1];
+      if (Math.hypot((pt[0] - l[0]) * WB_W, (pt[1] - l[1]) * WB_H) < 2 || wbCur.pts.length >= 2000) return;
+      wbCur.pts.push(pt);
+    }
+    wbPreview();
+  }
+  function wbEnd() {
+    if (!wbCur) return;
+    const it = wbCur; wbCur = null; liveCtx.clearRect(0, 0, WB_W, WB_H);
+    if (it.tool === "shape" && Math.hypot((it.pts[1][0] - it.pts[0][0]) * WB_W, (it.pts[1][1] - it.pts[0][1]) * WB_H) < 6) return;
+    it.pts = it.pts.map(([x, y]) => [+x.toFixed(4), +y.toFixed(4)]);
+    if (wbItems.length >= 3000) { setStatus("The whiteboard is full - ask the host to clear it."); return; }
+    wbItems.push(it); drawItem(wbCtx, it); send({ type: "wb_item", item: it });
+  }
+  function wbUndo() {
+    for (let i = wbItems.length - 1; i >= 0; i--) {
+      if (wbItems[i].owner === myId) { const id = wbItems[i].id; wbItems.splice(i, 1); wbRedraw(); send({ type: "wb_undo", id }); return; }
+    }
+    setStatus("Nothing of yours to undo.");
+  }
+  async function wbSave() {
+    const blob = await new Promise((r) => wbCanvas.toBlob(r, "image/png"));
+    const name = `Whiteboard-${code}-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, "-")}.png`;
+    setStatus("Saving whiteboard...", true);
+    try {
+      const fd = new FormData(); fd.append("file", blob, name);
+      const r = await fetch(`/api/meetings/${encodeURIComponent(code)}/files`, { method: "POST", headers: { Authorization: "Bearer " + token }, body: fd });
+      if (!r.ok) { let d = ""; try { d = (await r.json()).detail; } catch (e) {} throw new Error(d || "HTTP " + r.status); }
+      setStatus("Whiteboard image saved - find it under Files... in the meetings list.");
+    } catch (err) {
+      setStatus(`Could not upload (${err.message}). Saving to this computer instead.`, true);
+      const url = URL.createObjectURL(blob), a = document.createElement("a");
+      a.href = url; a.download = name; document.body.append(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 60000); setTimeout(() => setStatus(""), 8000);
+    }
+  }
+
+  // ----- mouse / touch / pen
+  const toNorm = (ev) => { const r = wbLive.getBoundingClientRect(); return [Math.min(1, Math.max(0, (ev.clientX - r.left) / r.width)), Math.min(1, Math.max(0, (ev.clientY - r.top) / r.height))]; };
+  wbLive.addEventListener("pointerdown", (ev) => { if (ev.button !== 0) return; wbLive.setPointerCapture(ev.pointerId); wbBegin(toNorm(ev)); });
+  wbLive.addEventListener("pointermove", (ev) => wbMove(toNorm(ev)));
+  for (const t of ["pointerup", "pointercancel"]) wbLive.addEventListener(t, () => wbEnd());
+
+  // ----- layout + toolbar
+  function fitBoard() {
+    const s = $("wbStage").getBoundingClientRect(), board = $("wbBoard");
+    const w = Math.max(240, Math.min(s.width, (s.height * 16) / 9));
+    board.style.width = w + "px"; board.style.height = (w * 9) / 16 + "px";
+  }
+  window.addEventListener("resize", () => { if (wbOpen) fitBoard(); });
+  $("btnChat").addEventListener("click", () => setTimeout(() => wbOpen && fitBoard(), 60));
+  const svgIcon = (inner, fill) => {
+    const f = fill === 1 ? 'fill="currentColor" fill-opacity=".35"' : fill === 2 ? 'fill="currentColor"' : 'fill="none"';
+    return `<svg viewBox="0 0 24 24" width="22" height="22" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><g ${f}>${inner}</g></svg>`;
+  };
+  function wbBuildUi() {
+    const add = (parent, html, title, onclick, data) => {
+      const b = document.createElement("button"); b.innerHTML = html; b.title = title; b.setAttribute("data-dwell", ""); b.onclick = onclick;
+      Object.entries(data).forEach(([k, v]) => (b.dataset[k] = v)); $(parent).append(b); return b;
+    };
+    for (const [t, label] of [["pen", "Pen"], ["highlighter", "Marker"], ["eraser", "Eraser"]]) add("wbTool", label, label, () => { wbTool = t; wbRefresh(); }, { tool: t });
+    for (const w of [3, 6, 11, 18]) {
+      const d = Math.max(4, w);
+      add("wbWidth", `<span style="display:block;width:${d}px;height:${d}px;border-radius:50%;background:currentColor"></span>`, "Line width", () => { wbWidth = w; wbRefresh(); }, { width: w });
+    }
+    for (const [s, f] of SHAPE_GRID) add("wbShapes", svgIcon(SHAPE_PATHS[s], f), s, () => { wbTool = "shape"; wbShape = s; wbFill = f; wbRefresh(); }, { shape: s, fill: f });
+    for (const col of WB_COLORS) {
+      const b = add("wbColors", "", "Color", () => { wbColor = col; if (wbTool === "eraser") wbTool = "pen"; wbRefresh(); }, { color: col });
+      b.style.backgroundColor = col;
+    }
+  }
+  function wbRefresh() {
+    document.querySelectorAll("#wbTool button").forEach((b) => b.classList.toggle("sel", wbTool === b.dataset.tool));
+    document.querySelectorAll("#wbWidth button").forEach((b) => b.classList.toggle("sel", wbWidth === +b.dataset.width));
+    document.querySelectorAll("#wbShapes button").forEach((b) => b.classList.toggle("sel", wbTool === "shape" && wbShape === b.dataset.shape && wbFill === +b.dataset.fill));
+    document.querySelectorAll("#wbColors button").forEach((b) => { b.style.outline = wbColor === b.dataset.color ? "3px solid #93c5fd" : "2px solid #4b5563"; });
+    $("wbLock").textContent = wbLocked ? "Unlock board" : "Lock board";
+    $("wbHandToggle").textContent = hand.on ? "Hand gestures: ON" : "Hand gestures: OFF";
+    $("wbHandToggle").classList.toggle("sel", hand.on);
+  }
+  function openWb() { refreshCams(); wbOpen = true; $("wb").hidden = false; $("btnWb").classList.add("on"); fitBoard(); wbRedraw(); }
+  function closeWb() { stopHand(); wbEnd(); wbOpen = false; $("wb").hidden = true; $("btnWb").classList.remove("on"); }
+  $("btnWb").onclick = () => (wbOpen ? closeWb() : openWb());
+  $("wbClose").onclick = closeWb;
+  $("wbUndo").onclick = wbUndo;
+  $("wbSave").onclick = wbSave;
+  $("wbClear").onclick = () => { if (confirm("Clear the whiteboard for everyone?")) send({ type: "wb_clear" }); };
+  $("wbLock").onclick = () => send({ type: "wb_lock", locked: !wbLocked });
+  $("wbHandToggle").onclick = () => (hand.on ? stopHand() : startHand());
+  async function refreshCams() {                              // list cameras so you can avoid the IR / wrong one
+    const sel = $("wbCamSel"), prev = sel.value;
+    let devs = [];
+    try { devs = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === "videoinput"); } catch (e) {}
+    sel.innerHTML = ""; sel.add(new Option("Auto (meeting camera)", "auto"));
+    devs.forEach((d, i) => sel.add(new Option(d.label || `Camera ${i + 1}`, d.deviceId)));
+    sel.value = [...sel.options].some((o) => o.value === prev) ? prev : "auto";
+  }
+  $("wbCamSel").onchange = () => { if (hand.on) { stopHand(); startHand(); } };
+
+  // ----- hand gestures
+  const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+  function classify(lm) {                                    // works whichever way the hand is rotated
+    const w = lm[0], ext = (tip, pip) => dist(lm[tip], w) > dist(lm[pip], w) * 1.08;
+    const idx = ext(8, 6), mid = ext(12, 10), ring = ext(16, 14), pin = ext(20, 18);
+    if (idx && !mid && !ring && !pin) return "draw";
+    if (idx && mid && !ring && !pin) return "hover";
+    if (idx && mid && ring && pin) return "erase";
+    if (!idx && !mid && !ring && !pin) return "fist";
+    return "idle";
+  }
+  function canvasPoint(px, py) {
+    const r = wbLive.getBoundingClientRect();
+    return px < r.left || px > r.right || py < r.top || py > r.bottom ? null : [(px - r.left) / r.width, (py - r.top) / r.height];
+  }
+  function refreshBadge() {
+    const v = hand.video, size = v && v.videoWidth ? `${v.videoWidth}x${v.videoHeight}` : "no video";
+    const info = `  [${hand.fps} fps, ${size}${hand.label ? ", " + hand.label : ""}]`;
+    $("wbGesture").textContent = hand.blank
+      ? "Camera image is blank - is the lens covered, a shutter closed, or is this the wrong camera? Pick another camera on the left." + info
+      : (GESTURE_TEXT[hand.gesture] || hand.gesture) + info;
+  }
+  function setGesture(g) {
+    if (hand.gesture === "draw" || hand.gesture === "erase") wbEnd();
+    hand.gesture = g; refreshBadge(); $("wbCursor").className = "g-" + g;
+    if (g !== "fist") hand.fistSince = 0;
+  }
+  function dwellReset() {
+    if (hand.dwellEl) hand.dwellEl.style.removeProperty("--dwell");
+    hand.dwellEl = null; hand.dwellFired = false;
+  }
+  function dwellUpdate(el) {                                  // hold the pointer over a button ~1 s to press it
+    const target = el && el.closest ? el.closest("[data-dwell]") : null, now = performance.now();
+    if (target !== hand.dwellEl) { dwellReset(); hand.dwellEl = target; hand.dwellSince = now; }
+    if (!target) return;
+    const p = Math.min(1, (now - hand.dwellSince) / 900);
+    target.style.setProperty("--dwell", (p * 100).toFixed(0) + "%");
+    if (p >= 1 && !hand.dwellFired) { hand.dwellFired = true; target.click(); setTimeout(() => target.style.removeProperty("--dwell"), 250); }
+  }
+  const HAND_LINES = [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12],[9,13],[13,14],[14,15],[15,16],[13,17],[17,18],[18,19],[19,20],[0,17]];
+  function drawHandPreview(lm) {
+    const cv = $("wbCam"), c = cv.getContext("2d");
+    c.save(); c.translate(cv.width, 0); c.scale(-1, 1); c.drawImage(hand.video, 0, 0, cv.width, cv.height);
+    if (lm) {
+      c.strokeStyle = "#22c55e"; c.lineWidth = 2; c.beginPath();
+      for (const [a, b] of HAND_LINES) { c.moveTo(lm[a].x * cv.width, lm[a].y * cv.height); c.lineTo(lm[b].x * cv.width, lm[b].y * cv.height); }
+      c.stroke(); c.fillStyle = "#ef4444";
+      for (const p of lm) { c.beginPath(); c.arc(p.x * cv.width, p.y * cv.height, 3, 0, 7); c.fill(); }
+    }
+    c.restore();
+  }
+  function onHandResult(res) {
+    const lm = res.landmarks && res.landmarks[0], now = performance.now();
+    drawHandPreview(lm);
+    const g = lm ? classify(lm) : "none";
+    if (g === hand.pending) hand.count++; else { hand.pending = g; hand.count = 1; }
+    if (hand.count >= 3 && g !== hand.gesture) setGesture(g);     // ignore 1-2 frame flickers
+    const cursor = $("wbCursor");
+    if (!lm) { cursor.hidden = true; dwellReset(); return; }
+    const tip = hand.gesture === "erase" ? lm[9] : lm[8];           // palm centre when erasing, index tip otherwise
+    const clamp = (v) => Math.min(1, Math.max(0, (v - 0.12) / 0.76));  // use the middle of the camera view so edges are reachable
+    const nx = clamp(1 - tip.x), ny = clamp(tip.y);                 // 1 - x: the preview is mirrored
+    hand.sm = hand.sm ? [hand.sm[0] + (nx - hand.sm[0]) * 0.5, hand.sm[1] + (ny - hand.sm[1]) * 0.5] : [nx, ny];
+    const r = $("wb").getBoundingClientRect(), px = r.left + hand.sm[0] * r.width, py = r.top + hand.sm[1] * r.height;
+    cursor.hidden = false; cursor.style.transform = `translate(${px}px, ${py}px)`;
+    const el = document.elementFromPoint(px, py), overButton = !!(el && el.closest && el.closest("[data-dwell]"));
+    if ((hand.gesture === "draw" || hand.gesture === "erase") && !overButton) {
+      dwellReset();
+      const pt = canvasPoint(px, py);
+      if (pt) { if (!wbCur) wbBegin(pt, hand.gesture === "erase"); else wbMove(pt); } else wbEnd();
+    } else {
+      wbEnd();
+      if (hand.gesture === "hover" || hand.gesture === "draw") dwellUpdate(el); else dwellReset();
+    }
+    if (hand.gesture === "fist") {
+      if (!hand.fistSince) hand.fistSince = now;
+      else if (now - hand.fistSince > 1200 && now - hand.lastUndo > 2000) { hand.lastUndo = now; wbUndo(); }
+    } else hand.fistSince = 0;
+  }
+  function previewLooksBlank() {                              // flat colour = covered lens / wrong device
+    try {
+      const d = $("wbCam").getContext("2d").getImageData(0, 0, 200, 150).data;
+      let n = 0, sum = 0, sq = 0;
+      for (let i = 0; i < d.length; i += 160) { const y = d[i] * 0.3 + d[i + 1] * 0.59 + d[i + 2] * 0.11; n++; sum += y; sq += y * y; }
+      const mean = sum / n;
+      return Math.sqrt(Math.max(0, sq / n - mean * mean)) < 5;
+    } catch (e) { return false; }
+  }
+  function handLoop() {
+    if (!hand.on) return;
+    const v = hand.video, now = performance.now();
+    if (v && v.readyState >= 2 && v.videoWidth > 0 && now - hand.lastRun >= 25) {   // at most ~40 detections per second
+      hand.lastRun = now;
+      const ts = Math.floor(Math.max(now, hand.lastTs + 1)); hand.lastTs = ts;       // MediaPipe needs increasing timestamps
+      let res = null;
+      try { res = hand.landmarker.detectForVideo(v, ts); }
+      catch (e) { if (++hand.errors === 1) setStatus("Hand tracking error: " + ((e && e.message) || e)); }
+      hand.frames++;
+      if (now - hand.fpsAt >= 1000) { hand.fps = hand.frames; hand.frames = 0; hand.fpsAt = now; hand.blank = previewLooksBlank(); refreshBadge(); }
+      onHandResult(res || { landmarks: [] });
+    }
+    hand.raf = requestAnimationFrame(handLoop);
+  }
+  async function loadLandmarker() {
+    if (hand.landmarker) return;
+    const vision = await import(MP_BASE + "/vision_bundle.mjs");
+    const fileset = await vision.FilesetResolver.forVisionTasks(MP_BASE + "/wasm");
+    const make = (delegate) => vision.HandLandmarker.createFromOptions(fileset, {
+      baseOptions: { modelAssetPath: MP_MODEL, delegate }, runningMode: "VIDEO", numHands: 1,
+      minHandDetectionConfidence: 0.6, minHandPresenceConfidence: 0.6, minTrackingConfidence: 0.5,
+    });
+    hand.landmarker = await make("CPU");
+  }
+  async function startHand() {
+    if (hand.on) return;
+    const btn = $("wbHandToggle"); btn.disabled = true;
+    try {
+      if (!navigator.mediaDevices) throw new Error("the camera needs a secure origin (https:// or localhost)");
+      setStatus("Starting hand tracking... (first time it downloads about 10 MB, internet needed)", true);
+      await loadLandmarker();
+      const choice = $("wbCamSel").value, track = choice === "auto" ? camTrack() : null;                                     // reuse the meeting camera when it is on
+      if (track) { hand.stream = new MediaStream([track]); hand.own = false; }
+      else {
+        const video = choice === "auto" ? { width: 640, height: 480 } : { deviceId: { exact: choice }, width: 640, height: 480 };
+        hand.stream = await navigator.mediaDevices.getUserMedia({ video }); hand.own = true;
+      }
+      hand.label = (hand.stream.getVideoTracks()[0] || {}).label || "";
+      const vid = document.createElement("video");
+      vid.muted = true; vid.playsInline = true; vid.autoplay = true; vid.srcObject = hand.stream;
+      Object.assign(vid.style, { position: "fixed", right: "0", bottom: "0", width: "4px", height: "4px", opacity: "0.01", pointerEvents: "none" });
+      document.body.append(vid); hand.video = vid;
+      await vid.play();
+      hand.on = true; hand.sm = null; hand.pending = "none"; hand.count = 0; hand.gesture = "none";
+      hand.lastRun = 0; hand.lastTs = 0; hand.frames = 0; hand.fps = 0; hand.fpsAt = performance.now(); hand.errors = 0;
+      $("wbCam").hidden = false; $("wbGesture").hidden = false; setGesture("none"); setStatus("");
+      hand.raf = requestAnimationFrame(handLoop);
+    } catch (e) { setStatus("Hand tracking could not start: " + ((e && e.message) || e)); stopHand(); }
+    finally { btn.disabled = false; wbRefresh(); refreshCams(); }
+  }
+  function stopHand() {
+    cancelAnimationFrame(hand.raf); hand.on = false; wbEnd();
+    if (hand.stream && hand.own) hand.stream.getTracks().forEach((t) => t.stop());
+    hand.stream = null; hand.own = false; hand.blank = false; hand.label = "";
+    if (hand.video) { hand.video.srcObject = null; hand.video.remove(); hand.video = null; }
+    dwellReset(); $("wbCursor").hidden = true; $("wbCam").hidden = true; $("wbGesture").hidden = true; wbRefresh();
+  }
+  wbBuildUi(); wbRefresh(); wbRedraw();
+
+  // ---------- recording (host only: captured in the host's app, then uploaded to the meeting's Files) ----------
+  const getAcx = () => acx || (acx = new (window.AudioContext || window.webkitAudioContext)());
+  const updateBusy = () => { window.__busy = !!rec || uploading; };    // the desktop app checks this before closing
+  window.edumeetLeave = () => finish(0);
+
+  function addRecAudio(track) {
+    if (!rec || rec.sources.has(track.id)) return;
+    try {
+      const node = getAcx().createMediaStreamSource(new MediaStream([track]));
+      node.connect(rec.dest); rec.sources.set(track.id, node);
+    } catch (e) { console.warn("recording audio", e); }
+  }
+  function drawFrame(c, W, H) {
+    c.fillStyle = "#0f172a"; c.fillRect(0, 0, W, H);
+    if (wbOpen) { c.drawImage(wbCanvas, 0, 0, W, H); return; }   // whiteboard on screen -> record the board
+    const tiles = [{ video: selfTile.video, name: myName + " (you)", nocam: selfTile.tile.classList.contains("nocam"), screen: selfTile.tile.classList.contains("screen") }];
+    for (const e of peers.values()) tiles.push({ video: e.video, name: e.info.name, nocam: e.tile.classList.contains("nocam"), screen: e.tile.classList.contains("screen") });
+    const n = tiles.length, cols = n <= 1 ? 1 : n <= 4 ? 2 : n <= 9 ? 3 : 4, rows = Math.ceil(n / cols), gap = 8;
+    const cw = (W - gap * (cols + 1)) / cols, ch = (H - gap * (rows + 1)) / rows;
+    tiles.forEach((t, i) => {
+      const x = gap + (i % cols) * (cw + gap), y = gap + Math.floor(i / cols) * (ch + gap), v = t.video;
+      c.fillStyle = "#111827"; c.fillRect(x, y, cw, ch);
+      if (!t.nocam && v.videoWidth > 0 && v.readyState >= 2) {
+        const s = (t.screen ? Math.min : Math.max)(cw / v.videoWidth, ch / v.videoHeight), w = v.videoWidth * s, h = v.videoHeight * s;
+        c.save(); c.beginPath(); c.rect(x, y, cw, ch); c.clip(); c.drawImage(v, x + (cw - w) / 2, y + (ch - h) / 2, w, h); c.restore();
+      } else {
+        const r = Math.min(cw, ch);
+        c.fillStyle = "#334155"; c.beginPath(); c.arc(x + cw / 2, y + ch / 2, r * 0.18, 0, Math.PI * 2); c.fill();
+        c.fillStyle = "#e5e7eb"; c.font = `600 ${Math.round(r * 0.2)}px sans-serif`; c.textAlign = "center"; c.textBaseline = "middle";
+        c.fillText((t.name.trim()[0] || "?").toUpperCase(), x + cw / 2, y + ch / 2);
+      }
+      c.font = "16px sans-serif"; c.textAlign = "left"; c.textBaseline = "alphabetic";
+      const tw = c.measureText(t.name).width + 16;
+      c.fillStyle = "rgba(0,0,0,.6)"; c.fillRect(x + 8, y + ch - 30, tw, 24); c.fillStyle = "#fff"; c.fillText(t.name, x + 16, y + ch - 12);
+    });
+  }
+  function beginCapture() {
+    if (rec) return;
+    if (typeof MediaRecorder === "undefined") { setStatus("Recording is not supported in this window."); send({ type: "recording", on: false }); return; }
+    const W = 1280, H = 720, canvas = document.createElement("canvas"); canvas.width = W; canvas.height = H;
+    const c = canvas.getContext("2d"), ac = getAcx(); ac.resume().catch(() => {});
+    const dest = ac.createMediaStreamDestination();
+    rec = { dest, chunks: [], sources: new Map(), startedAt: new Date() };
+    if (localStream) localStream.getAudioTracks().forEach(addRecAudio);
+    for (const e of peers.values()) e.stream.getAudioTracks().forEach(addRecAudio);
+    const stream = new MediaStream([canvas.captureStream(20).getVideoTracks()[0], ...dest.stream.getAudioTracks()]);
+    const mime = ["video/webm;codecs=vp9,opus", "video/webm;codecs=vp8,opus", "video/webm"].find((t) => MediaRecorder.isTypeSupported(t)) || "";
+    try { rec.recorder = new MediaRecorder(stream, mime ? { mimeType: mime, videoBitsPerSecond: 2500000 } : {}); }
+    catch (e) { rec = null; setStatus("Could not start recording: " + e.message); send({ type: "recording", on: false }); return; }
+    rec.mime = rec.recorder.mimeType || mime || "video/webm";
+    rec.recorder.ondataavailable = (e) => { if (e.data && e.data.size) rec.chunks.push(e.data); };
+    drawFrame(c, W, H); rec.timer = setInterval(() => drawFrame(c, W, H), 50);
+    rec.recorder.start(5000);
+    $("btnRec").textContent = "Stop recording"; $("btnRec").classList.add("off"); updateBusy();
+  }
+  async function endCapture() {
+    if (!rec) return;
+    const r = rec; rec = null; uploading = true; updateBusy(); clearInterval(r.timer);
+    $("btnRec").textContent = "Record"; $("btnRec").classList.remove("off");
+    await new Promise((resolve) => {
+      r.recorder.onstop = resolve;
+      try { if (r.recorder.state !== "inactive") r.recorder.stop(); else resolve(); } catch (e) { resolve(); }
+    });
+    r.sources.forEach((n) => { try { n.disconnect(); } catch (e) {} });
+    const blob = new Blob(r.chunks, { type: (r.mime || "video/webm").split(";")[0] });
+    if (blob.size < 1000) setStatus("The recording was empty - nothing was saved.");
+    else await saveRecording(blob, r.startedAt);
+    uploading = false; updateBusy();
+  }
+  async function saveRecording(blob, started) {
+    const name = `EduMeet-${code}-${started.toISOString().slice(0, 16).replace(/[:T]/g, "-")}.webm`;
+    setStatus(`Saving recording (${(blob.size / 1048576).toFixed(1)} MB)...`, true);
+    try {
+      const fd = new FormData(); fd.append("file", blob, name);
+      const r = await fetch(`/api/meetings/${encodeURIComponent(code)}/recordings`, { method: "POST", headers: { Authorization: "Bearer " + token }, body: fd });
+      if (!r.ok) { let d = ""; try { d = (await r.json()).detail; } catch (e) {} throw new Error(d || "HTTP " + r.status); }
+      setStatus("Recording saved - open Files... in the meetings list to download it.");
+      addChat("system", "Recording saved to the meeting's Files.");
+    } catch (err) {
+      setStatus(`Could not upload the recording (${err.message}). Saving it to this computer instead.`, true);
+      const url = URL.createObjectURL(blob), a = document.createElement("a");
+      a.href = url; a.download = name; document.body.append(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 60000); setTimeout(() => setStatus(""), 8000);
+    }
+  }
+  $("btnRec").onclick = () => { getAcx().resume().catch(() => {}); send({ type: "recording", on: !rec }); };
+
+  // ---------- remote control (the person sharing must approve; see desktop/remote_control.py) ----------
+  if (typeof QWebChannel !== "undefined" && window.qt && qt.webChannelTransport) {
+    new QWebChannel(qt.webChannelTransport, (ch) => {
+      bridge = ch.objects.bridge;
+      bridge.consentResult.connect((peerId, granted) => {
+        send({ type: "control_response", to: peerId, granted });
+        if (granted) { controllerId = peerId; updateRemoteButton(); const e = peers.get(peerId); addChat("system", `${e ? e.info.name : "A participant"} is controlling your screen`); }
+      });
+      bridge.controlStopped.connect((peerId) => {          // you pressed Stop (or the fail-safe fired)
+        if (controllerId === peerId) { controllerId = null; updateRemoteButton(); send({ type: "control_stop", to: peerId }); addChat("system", "Remote control stopped"); }
+      });
+    });
+  }
+
+  // sharer side
+  function onControlRequest(m) {
+    const deny = () => send({ type: "control_response", to: m.from, granted: false });
+    if (!screenStream) return deny();
+    if (!bridge) { addChat("system", `Remote control needs the EduMeet desktop app - declined ${m.name}'s request.`); return deny(); }
+    if (controllerId) return deny();
+    addChat("system", `${m.name} asked to control your screen`);
+    bridge.askConsent(m.name, m.from);                     // native prompt; answer arrives via consentResult
+  }
+
+  // controller side
+  function requestControl(id) {
+    if (controlTarget) { setStatus("Stop controlling the current participant first."); return; }
+    send({ type: "control_request", to: id });
+    setStatus("Control request sent - waiting for approval...");
+  }
+  function onControlResponse(m) {
+    if (m.granted) startControlling(m.from);
+    else setStatus(`${m.name || "The participant"} did not allow remote control.`);
+  }
+  function onControlStopped(m) {
+    if (m.controller === myId && controlTarget === m.target) { stopControlling(false); setStatus(m.reason || "Remote control ended."); }
+    if (m.target === myId && controllerId === m.controller) {
+      controllerId = null; updateRemoteButton(); if (bridge) bridge.stopControl(); addChat("system", m.reason || "Remote control ended");
+    }
+  }
+
+  let lastMove = 0, inputVideo = null;
+  function norm(ev, video) {                               // pointer position inside the shared screen, 0..1
+    const r = video.getBoundingClientRect(), vw = video.videoWidth, vh = video.videoHeight;
+    if (!vw || !vh) return null;
+    const scale = Math.min(r.width / vw, r.height / vh), w = vw * scale, h = vh * scale;
+    const x = (ev.clientX - r.left - (r.width - w) / 2) / w, y = (ev.clientY - r.top - (r.height - h) / 2) / h;
+    return x < 0 || y < 0 || x > 1 || y > 1 ? null : { x, y };
+  }
+  const sendInput = (d) => send({ type: "control_input", to: controlTarget, data: d });
+  const mouseHandlers = {
+    mousemove: (ev) => { const now = performance.now(); if (now - lastMove < 33) return; const p = norm(ev, inputVideo); if (p) { lastMove = now; sendInput({ t: "move", ...p }); } },
+    mousedown: (ev) => { ev.preventDefault(); const p = norm(ev, inputVideo); if (p) sendInput({ t: "down", b: ev.button, ...p }); },
+    mouseup:   (ev) => { ev.preventDefault(); const p = norm(ev, inputVideo); if (p) sendInput({ t: "up", b: ev.button, ...p }); },
+    wheel:     (ev) => { ev.preventDefault(); sendInput({ t: "wheel", dy: -Math.round(ev.deltaY * 1.2) }); },
+    contextmenu: (ev) => ev.preventDefault(),
+  };
+  const keyHandler = (ev) => {
+    if (document.activeElement && document.activeElement.tagName === "INPUT") return;   // typing in chat
+    ev.preventDefault(); sendInput({ t: ev.type === "keydown" ? "kd" : "ku", c: ev.code });
+  };
+  function startControlling(id) {
+    const e = peers.get(id); if (!e) return;
+    controlTarget = id; inputVideo = e.video;
+    e.tile.classList.add("controlling"); updateRemoteButton();
+    for (const [k, f] of Object.entries(mouseHandlers)) inputVideo.addEventListener(k, f, { passive: false });
+    window.addEventListener("keydown", keyHandler, true); window.addEventListener("keyup", keyHandler, true);
+    addChat("system", `You are controlling ${e.info.name}'s screen. Use "Stop control" to end.`);
+  }
+  function stopControlling(notify) {
+    if (!controlTarget) return;
+    const id = controlTarget; controlTarget = null;
+    const e = peers.get(id); if (e) e.tile.classList.remove("controlling");
+    if (inputVideo) for (const [k, f] of Object.entries(mouseHandlers)) inputVideo.removeEventListener(k, f);
+    window.removeEventListener("keydown", keyHandler, true); window.removeEventListener("keyup", keyHandler, true);
+    inputVideo = null; updateRemoteButton();
+    if (notify) send({ type: "control_stop", to: id });
+  }
+  function updateRemoteButton() {
+    const b = $("btnRemote");
+    if (controlTarget) { b.textContent = "Stop control"; b.classList.add("off"); }
+    else if (controllerId) { b.textContent = "Stop remote access"; b.classList.add("off"); }
+    else { b.textContent = "Remote control"; b.classList.remove("off"); }
+  }
+  $("btnRemote").onclick = () => {
+    if (controlTarget) { stopControlling(true); return; }                       // I am controlling someone
+    if (controllerId) {                                                          // someone is controlling me
+      const id = controllerId; controllerId = null;
+      if (bridge) bridge.stopControl();
+      send({ type: "control_stop", to: id }); updateRemoteButton(); addChat("system", "Remote control stopped");
+      return;
+    }
+    const sharers = [...peers.entries()].filter(([, e]) => e.tile.classList.contains("screen"));
+    if (!sharers.length) {
+      setStatus(screenStream
+        ? "You are sharing your screen. Others can now click Remote control to ask for access - you will be asked to Allow."
+        : "Nobody is sharing their screen. Ask the person to click Share screen first, then click Remote control.");
+      return;
+    }
+    let pick = 0;
+    if (sharers.length > 1) {
+      const list = sharers.map(([, e], i) => `${i + 1}. ${e.info.name}`).join("\n");
+      pick = (parseInt(prompt("Control whose screen? Enter a number:\n" + list, "1"), 10) || 0) - 1;
+      if (pick < 0 || pick >= sharers.length) return;
+    }
+    requestControl(sharers[pick][0]);
+  };
+
+  function finish(delay) {
+    left = true;
+    setTimeout(async () => {
+      if (rec) { send({ type: "recording", on: false }); await endCapture(); }   // finish + upload before leaving
+      stopHand(); stopCC();
+      stopControlling(true); if (bridge) bridge.stopControl();
+      for (const id of [...peers.keys()]) removePeer(id);
+      if (localStream) localStream.getTracks().forEach((t) => t.stop());
+      if (screenStream) screenStream.getTracks().forEach((t) => t.stop());
+      try { ws.close(); } catch (e) {}
+      location.href = "edumeet://leave";       // the PySide6 window intercepts this and closes itself
+      setTimeout(() => window.close(), 300);   // fallback when opened in a normal browser
+    }, delay);
+  }
+  window.addEventListener("beforeunload", () => { left = true; try { ws.close(); } catch (e) {} });
+
+  // ---------- start ----------
+  (async () => {
+    if (!token) { setStatus("Missing sign-in token. Open this room from the EduMeet app.", true); return; }
+    selfTile = makeTile("self", "You", true);
+    localStream = new MediaStream();
+    const audio = await acquireAudio();
+    if (audio) { audio.enabled = wantMic; localStream.addTrack(audio); setMic(wantMic); }
+    if (wantCam) await startCamera(); else { await replaceVideo(null); updateCamButton(); }
+    try {
+      const r = await fetch("/api/meetings/ice-config", { headers: { Authorization: "Bearer " + token } });
+      if (r.ok) iceServers = (await r.json()).iceServers || [];
+    } catch (e) { /* fall back to host candidates only */ }
+    connect();
+  })();
+})();
+</script>
+</body>
+</html>
