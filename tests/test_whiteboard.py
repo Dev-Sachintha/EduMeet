@@ -63,3 +63,35 @@ def test_whiteboard_permissions():
         manager.whiteboard.pop("wb", None)
 
     asyncio.run(run())
+
+
+def test_text_and_table_items():
+    box = {"id": "t1", "tool": "text", "color": "#111827", "width": 28, "pts": [[0.1, 0.1], [0.4, 0.2]], "text": "Hello"}
+    assert _clean_wb_item(box, "p1")["text"] == "Hello"
+    assert _clean_wb_item({**box, "text": "   "}, "p1") is None
+    table = {"id": "tb", "tool": "table", "color": "#111827", "width": 3, "pts": [[0.1, 0.1], [0.6, 0.5]],
+             "rows": 2, "cols": 3, "header": True, "cells": [["a", "b"], ["c"]]}
+    clean = _clean_wb_item(table, "p1")
+    assert clean["cells"] == [["a", "b", ""], ["c", "", ""]] and clean["header"] is True
+    assert _clean_wb_item({**table, "rows": 99}, "p1") is None
+    assert _clean_wb_item({**table, "cols": "x"}, "p1") is None
+
+
+def test_only_owner_or_host_can_edit_a_text_box():
+    box = {"id": "t1", "tool": "text", "color": "#111827", "width": 28, "pts": [[0.1, 0.1], [0.4, 0.2]], "text": "Hello"}
+
+    async def run():
+        host, a, b = make_peer("h", "Host", True), make_peer("a", "A"), make_peer("b", "B")
+        manager.rooms["wbt"] = {"h": host, "a": a, "b": b}
+        manager.whiteboard.pop("wbt", None)
+        await _handle("wbt", a, {"type": "wb_item", "item": box})
+        await _handle("wbt", b, {"type": "wb_update", "item": {**box, "text": "hacked"}})        # not the owner
+        assert manager.board("wbt")["items"][0]["text"] == "Hello"
+        await _handle("wbt", a, {"type": "wb_update", "item": {**box, "text": "Edited"}})        # the owner
+        assert manager.board("wbt")["items"][0]["text"] == "Edited" and "wb_update" in types(b)
+        await _handle("wbt", host, {"type": "wb_update", "item": {**box, "text": "By host"}})    # the host
+        assert manager.board("wbt")["items"][0]["text"] == "By host"
+        manager.rooms.pop("wbt", None)
+        manager.whiteboard.pop("wbt", None)
+
+    asyncio.run(run())

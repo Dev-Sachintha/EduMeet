@@ -193,7 +193,7 @@ class ConnectionManager:
                 pass
 
 
-_WB_TOOLS = {"pen", "highlighter", "eraser", "shape"}
+_WB_TOOLS = {"pen", "highlighter", "eraser", "shape", "text", "table"}
 _WB_SHAPES = {"line", "arrow", "darrow", "rect", "circle", "diamond"}
 _WB_MAX_ITEMS = 3000
 
@@ -228,6 +228,28 @@ def _clean_wb_item(raw, owner: str) -> dict | None:
         item["shape"] = raw["shape"]
         item["fill"] = raw.get("fill") if raw.get("fill") in (0, 1, 2) else 0
         item["pts"] = clean_points[:2]
+    elif item["tool"] == "text":
+        text = str(raw.get("text", ""))[:1000]
+        if not text.strip() or len(clean_points) < 2:
+            return None
+        item["text"], item["pts"] = text, clean_points[:2]
+    elif item["tool"] == "table":
+        try:
+            rows, cols = int(raw.get("rows")), int(raw.get("cols"))
+        except (TypeError, ValueError):
+            return None
+        if not (1 <= rows <= 20 and 1 <= cols <= 12) or len(clean_points) < 2:
+            return None
+        given = raw.get("cells") if isinstance(raw.get("cells"), list) else []
+        item["cells"] = [
+            [
+                str(given[r][c])[:200]
+                if r < len(given) and isinstance(given[r], list) and c < len(given[r]) else ""
+                for c in range(cols)
+            ]
+            for r in range(rows)
+        ]
+        item["rows"], item["cols"], item["header"], item["pts"] = rows, cols, bool(raw.get("header")), clean_points[:2]
     return item
 
 
@@ -400,6 +422,21 @@ async def _handle(code: str, peer: Peer, msg: dict) -> None:
             if existing["id"] == target and (existing["owner"] == peer.peer_id or peer.is_host):
                 del board["items"][index]
                 await manager.broadcast(code, {"type": "wb_remove", "id": target})
+                break
+
+    elif kind == "wb_update":  # edit an existing text box / table in place (owner or host)
+        board = manager.board(code)
+        if board["locked"] and not peer.is_host:
+            await peer.send({"type": "error", "message": "The host has locked the whiteboard."})
+            return
+        raw = msg.get("item")
+        target = str(raw.get("id", "")) if isinstance(raw, dict) else ""
+        for index, existing in enumerate(board["items"]):
+            if existing["id"] == target and (existing["owner"] == peer.peer_id or peer.is_host):
+                item = _clean_wb_item(raw, existing["owner"])
+                if item is not None and item["id"] == existing["id"] and item["tool"] == existing["tool"]:
+                    board["items"][index] = item
+                    await manager.broadcast(code, {"type": "wb_update", "item": item}, exclude=peer.peer_id)
                 break
 
     elif kind in {"wb_clear", "wb_lock"}:

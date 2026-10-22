@@ -309,6 +309,11 @@ Everyone has a **Whiteboard** button in the room. The board is shared live: pen,
 **Clear all** and **Lock board** (students then view only). If a recording is running while the board is open, the
 board is what gets recorded.
 
+**Text box and Table:** in the toolbar under *Text and table*. Choose *Text box* or *Table* (for a table also set rows,
+columns and *Header row*), drag a frame on the board and type. Click an existing text box / table with the same tool
+to edit it (**Tab** = next table cell, **Enter** = next row, **Ctrl+Enter** finishes a text box, **Esc** cancels). The line-width
+buttons set the text size. Only the person who made it, or the host, can edit it; **Undo** removes your last item.
+
 **Hand gestures** (button *Hand gestures: OFF/ON*, uses MediaPipe Hand Landmarker in the room window):
 
 | Gesture | Action |

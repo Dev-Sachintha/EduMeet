@@ -86,6 +86,10 @@
   #wbBoard { position:relative; background:#fff; border-radius:10px; overflow:hidden; }
   #wbBoard canvas { position:absolute; inset:0; width:100%; height:100%; }
   #wbLive { touch-action:none; cursor:crosshair; }
+  #wbEdit { position:absolute; z-index:4; resize:none; border:2px dashed #2563eb; background:rgba(255,255,255,.96); color:#111;
+            font-family:"Segoe UI", system-ui, sans-serif; line-height:1.25; padding:2px 4px; box-sizing:border-box; overflow:hidden; outline:none; }
+  .wbtopts { display:flex; flex-direction:column; gap:6px; margin-top:6px; font-size:12px; }
+  .wbtopts input[type=number] { width:56px; background:#0f172a; color:#e5e7eb; border:1px solid #374151; border-radius:6px; padding:4px; }
   #wbGesture { position:absolute; left:10px; top:10px; background:rgba(0,0,0,.75); color:#fff; padding:6px 12px; border-radius:8px; font-size:14px; z-index:6; }
   #wbCam { position:absolute; right:10px; bottom:10px; width:200px; height:150px; border-radius:8px; border:2px solid #334155; background:#000; z-index:6; }
   #wbCursor { position:fixed; left:0; top:0; width:26px; height:26px; margin:-13px 0 0 -13px; border-radius:50%;
@@ -123,6 +127,13 @@
         <div class="wbh">Draw</div><div class="wbgrid g3" id="wbTool"></div>
         <div class="wbh">Line width</div><div class="wbgrid g4" id="wbWidth"></div>
         <div class="wbh">Shapes</div><div class="wbgrid g4" id="wbShapes"></div>
+        <div class="wbh">Text and table</div><div class="wbgrid g2" id="wbText"></div>
+        <div id="wbTableOpts" class="wbtopts" hidden>
+          <label>Rows <input type="number" id="tbRows" value="3" min="1" max="20"></label>
+          <label>Columns <input type="number" id="tbCols" value="3" min="1" max="12"></label>
+          <label><input type="checkbox" id="tbHead" checked> Header row</label>
+        </div>
+        <div class="wbhelp">Text box / Table: drag a box on the board, then type. Click an existing one with the same tool to edit it (Tab moves between table cells, Ctrl+Enter finishes a text box).</div>
         <div class="wbh">Color</div><div class="wbgrid g4" id="wbColors"></div>
         <div class="wbh">Actions</div>
         <div class="wbgrid g2">
@@ -135,7 +146,7 @@
         <button data-dwell id="wbClose" class="wbbig">Close whiteboard</button>
       </aside>
       <div id="wbStage">
-        <div id="wbBoard"><canvas id="wbCanvas" width="1280" height="720"></canvas><canvas id="wbLive" width="1280" height="720"></canvas></div>
+        <div id="wbBoard"><canvas id="wbCanvas" width="1280" height="720"></canvas><canvas id="wbLive" width="1280" height="720"></canvas><textarea id="wbEdit" hidden></textarea></div>
         <div id="wbGesture" hidden></div><canvas id="wbCam" width="200" height="150" hidden></canvas>
       </div>
       <div id="wbCursor" hidden></div>
@@ -411,6 +422,7 @@
         if (!wbOpen && performance.now() - wbNote > 30000) { wbNote = performance.now(); addChat("system", `${e ? e.info.name : "Someone"} is drawing on the whiteboard - click Whiteboard to view.`); }
         break;
       }
+      case "wb_update": { const i = wbItems.findIndex((x) => x.id === m.item.id); if (i >= 0) wbItems[i] = m.item; wbRedraw(); break; }
       case "wb_remove": wbItems = wbItems.filter((i) => i.id !== m.id); wbRedraw(); break;
       case "wb_clear": wbItems = []; wbRedraw(); addChat("system", `${m.by} cleared the whiteboard.`); break;
       case "wb_lock": wbLocked = !!m.locked; wbRefresh(); addChat("system", m.locked ? "The host locked the whiteboard." : "The whiteboard is unlocked."); break;
@@ -814,6 +826,49 @@
                          erase: "\u{1F590} Erasing", fist: "\u270A Hold to undo" };
 
   // ----- drawing primitives (items use coordinates 0..1 so every screen size agrees)
+  const FONT = '"Segoe UI", system-ui, sans-serif';
+  const FONT_SIZES = { 3: 20, 6: 28, 11: 40, 18: 56 };           // line-width buttons double as text sizes
+  const clampInt = (v, lo, hi, dflt) => { const n = parseInt(v, 10); return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : dflt; };
+  const emptyCells = (r, k) => Array.from({ length: r }, () => Array(k).fill(""));
+  function wrapLines(c, text, maxW) {
+    const lines = [];
+    for (const para of String(text).split("\n")) {
+      let line = "";
+      for (const word of para.split(" ")) {
+        const test = line ? line + " " + word : word;
+        if (!line || c.measureText(test).width <= maxW) line = test; else { lines.push(line); line = word; }
+      }
+      lines.push(line);
+    }
+    return lines;
+  }
+  function drawText(c, it, pts) {
+    const a = pts[0], b = pts[1] || pts[0], x = Math.min(a[0], b[0]), y = Math.min(a[1], b[1]), w = Math.max(60, Math.abs(a[0] - b[0]));
+    c.font = `${it.width}px ${FONT}`; c.fillStyle = it.color; c.textBaseline = "top";
+    wrapLines(c, it.text || "", w - 8).forEach((ln, i) => c.fillText(ln, x + 4, y + 4 + i * it.width * 1.25));
+  }
+  function drawTable(c, it, pts) {
+    const a = pts[0], b = pts[1] || pts[0], x = Math.min(a[0], b[0]), y = Math.min(a[1], b[1]);
+    const w = Math.max(60, Math.abs(a[0] - b[0])), h = Math.max(30, Math.abs(a[1] - b[1]));
+    const cw = w / it.cols, rh = h / it.rows, fs = Math.max(10, Math.min(rh * 0.5, 28));
+    if (it.header) { c.fillStyle = "#e2e8f0"; c.fillRect(x, y, w, rh); }
+    c.strokeStyle = it.color; c.lineWidth = Math.min(it.width, 8); c.lineCap = "square";
+    c.beginPath();
+    for (let ri = 0; ri <= it.rows; ri++) { c.moveTo(x, y + ri * rh); c.lineTo(x + w, y + ri * rh); }
+    for (let ci = 0; ci <= it.cols; ci++) { c.moveTo(x + ci * cw, y); c.lineTo(x + ci * cw, y + h); }
+    c.stroke();
+    c.fillStyle = it.color; c.textBaseline = "middle";
+    for (let ri = 0; ri < it.rows; ri++) {
+      c.font = `${it.header && ri === 0 ? "bold " : ""}${fs}px ${FONT}`;
+      for (let ci = 0; ci < it.cols; ci++) {
+        const text = ((it.cells || [])[ri] || [])[ci] || "";
+        if (!text) continue;
+        let t = text;
+        if (c.measureText(t).width > cw - 12) { while (t.length > 1 && c.measureText(t + "\u2026").width > cw - 12) t = t.slice(0, -1); t += "\u2026"; }
+        c.fillText(t, x + ci * cw + 8, y + ri * rh + rh / 2);
+      }
+    }
+  }
   function arrowHead(c, tip, ang, size) {
     c.beginPath();
     c.moveTo(tip[0], tip[1]); c.lineTo(tip[0] - size * Math.cos(ang - 0.5), tip[1] - size * Math.sin(ang - 0.5));
@@ -824,7 +879,9 @@
     const pts = it.pts.map(([x, y]) => [x * WB_W, y * WB_H]);
     c.save(); c.lineCap = "round"; c.lineJoin = "round"; c.lineWidth = it.width;
     c.strokeStyle = it.tool === "eraser" ? "#ffffff" : it.color; c.fillStyle = it.color;
-    if (it.tool === "shape") {
+    if (it.tool === "text") drawText(c, it, pts);
+    else if (it.tool === "table") drawTable(c, it, pts);
+    else if (it.tool === "shape") {
       const a = pts[0], b = pts[1] || pts[0], x = Math.min(a[0], b[0]), y = Math.min(a[1], b[1]), w = Math.abs(a[0] - b[0]), h = Math.abs(a[1] - b[1]);
       c.beginPath();
       if (it.shape === "line" || it.shape === "arrow" || it.shape === "darrow") {
@@ -849,7 +906,16 @@
     c.restore();
   }
   function wbRedraw() { wbCtx.fillStyle = "#ffffff"; wbCtx.fillRect(0, 0, WB_W, WB_H); for (const it of wbItems) drawItem(wbCtx, it); }
-  function wbPreview() { liveCtx.clearRect(0, 0, WB_W, WB_H); if (wbCur) drawItem(liveCtx, wbCur); }
+  function wbPreview() {
+    liveCtx.clearRect(0, 0, WB_W, WB_H);
+    if (!wbCur) return;
+    drawItem(liveCtx, wbCur);
+    if (wbCur.tool === "text") {
+      const [a, b] = wbCur.pts; liveCtx.save(); liveCtx.setLineDash([10, 8]); liveCtx.strokeStyle = "#2563eb"; liveCtx.lineWidth = 2;
+      liveCtx.strokeRect(Math.min(a[0], b[0]) * WB_W, Math.min(a[1], b[1]) * WB_H, Math.abs(a[0] - b[0]) * WB_W, Math.abs(a[1] - b[1]) * WB_H);
+      liveCtx.restore();
+    }
+  }
 
   // ----- one stroke API used by both the mouse and the hand
   function wbBegin(pt, forceEraser) {
@@ -858,14 +924,20 @@
       return;
     }
     const tool = forceEraser ? "eraser" : wbTool;
-    const width = forceEraser ? 44 : tool === "eraser" ? wbWidth * 5 : tool === "highlighter" ? wbWidth * 3 : wbWidth;
+    if ((tool === "text" || tool === "table") && openExisting(pt, tool)) return;   // click on an existing one = edit it
+    const width = forceEraser ? 44 : tool === "text" ? (FONT_SIZES[wbWidth] || 28) : tool === "eraser" ? wbWidth * 5 : tool === "highlighter" ? wbWidth * 3 : wbWidth;
     wbCur = { id: `${myId}-${++wbSeq}`, owner: myId, tool, color: wbColor, width, pts: [pt] };
     if (tool === "shape") { wbCur.shape = wbShape; wbCur.fill = wbFill; wbCur.pts = [pt, pt]; }
+    if (tool === "text") wbCur.pts = [pt, pt];
+    if (tool === "table") {
+      wbCur.pts = [pt, pt]; wbCur.rows = clampInt($("tbRows").value, 1, 20, 3); wbCur.cols = clampInt($("tbCols").value, 1, 12, 3);
+      wbCur.header = $("tbHead").checked; wbCur.cells = emptyCells(wbCur.rows, wbCur.cols);
+    }
     wbPreview();
   }
   function wbMove(pt) {
     if (!wbCur) return;
-    if (wbCur.tool === "shape") wbCur.pts[1] = pt;
+    if (wbCur.tool === "shape" || wbCur.tool === "text" || wbCur.tool === "table") wbCur.pts[1] = pt;
     else {
       const l = wbCur.pts[wbCur.pts.length - 1];
       if (Math.hypot((pt[0] - l[0]) * WB_W, (pt[1] - l[1]) * WB_H) < 2 || wbCur.pts.length >= 2000) return;
@@ -876,6 +948,7 @@
   function wbEnd() {
     if (!wbCur) return;
     const it = wbCur; wbCur = null; liveCtx.clearRect(0, 0, WB_W, WB_H);
+    if (it.tool === "text" || it.tool === "table") { finishBox(it); return; }
     if (it.tool === "shape" && Math.hypot((it.pts[1][0] - it.pts[0][0]) * WB_W, (it.pts[1][1] - it.pts[0][1]) * WB_H) < 6) return;
     it.pts = it.pts.map(([x, y]) => [+x.toFixed(4), +y.toFixed(4)]);
     if (wbItems.length >= 3000) { setStatus("The whiteboard is full - ask the host to clear it."); return; }
@@ -910,6 +983,100 @@
   wbLive.addEventListener("pointermove", (ev) => wbMove(toNorm(ev)));
   for (const t of ["pointerup", "pointercancel"]) wbLive.addEventListener(t, () => wbEnd());
 
+  // ----- text boxes and tables: drag a frame, then type; click an existing one with the same tool to edit it
+  const editor = { ctx: null };
+  const itemBox = (it) => {
+    const a = it.pts[0], b = it.pts[1] || a;
+    return { x: Math.min(a[0], b[0]) * WB_W, y: Math.min(a[1], b[1]) * WB_H, w: Math.abs(a[0] - b[0]) * WB_W, h: Math.abs(a[1] - b[1]) * WB_H };
+  };
+  const canEdit = (it) => it.owner === myId || isHost;
+  function wbCommitNew(it) {
+    if (wbItems.length >= 3000) { setStatus("The whiteboard is full - ask the host to clear it."); return; }
+    wbItems.push(it); drawItem(wbCtx, it); send({ type: "wb_item", item: it });
+  }
+  function wbCommitUpdate(it) { wbRedraw(); send({ type: "wb_update", item: it }); }
+  function wbRemoveItem(id) {
+    const i = wbItems.findIndex((x) => x.id === id);
+    if (i >= 0) { wbItems.splice(i, 1); wbRedraw(); send({ type: "wb_undo", id }); }
+  }
+  function finishBox(it) {                                        // a frame was dragged (or just clicked)
+    const [a, b] = it.pts, x0 = Math.min(a[0], b[0]), y0 = Math.min(a[1], b[1]);
+    let x1 = Math.max(a[0], b[0]), y1 = Math.max(a[1], b[1]);
+    const smallW = (x1 - x0) * WB_W < 40, smallH = (y1 - y0) * WB_H < 24;
+    if (smallW) x1 = Math.min(1, x0 + (it.tool === "table" ? 0.4 : 0.3));
+    if (smallH) y1 = Math.min(1, y0 + (it.tool === "table" ? it.rows * 0.07 : 0.12));
+    it.pts = [[+x0.toFixed(4), +y0.toFixed(4)], [+x1.toFixed(4), +y1.toFixed(4)]];
+    if (it.tool === "text") openEditor({ mode: "text", item: it, isNew: true });
+    else { wbCommitNew(it); openEditor({ mode: "cell", item: it, r: 0, c: 0 }); }
+  }
+  function hitItem(pt, tool) {
+    const px = pt[0] * WB_W, py = pt[1] * WB_H;
+    for (let i = wbItems.length - 1; i >= 0; i--) {
+      const it = wbItems[i]; if (it.tool !== tool) continue;
+      const bx = itemBox(it);
+      if (px >= bx.x && px <= bx.x + bx.w && py >= bx.y && py <= bx.y + bx.h) return it;
+    }
+    return null;
+  }
+  function openExisting(pt, tool) {
+    const it = hitItem(pt, tool); if (!it) return false;
+    if (!canEdit(it)) { setStatus("Only the person who made it (or the host) can edit this."); return true; }
+    if (tool === "text") openEditor({ mode: "text", item: it, isNew: false });
+    else {
+      const bx = itemBox(it);
+      const c = Math.min(it.cols - 1, Math.max(0, Math.floor(((pt[0] * WB_W - bx.x) / Math.max(bx.w, 1)) * it.cols)));
+      const r = Math.min(it.rows - 1, Math.max(0, Math.floor(((pt[1] * WB_H - bx.y) / Math.max(bx.h, 1)) * it.rows)));
+      openEditor({ mode: "cell", item: it, r, c });
+    }
+    return true;
+  }
+  function openEditor(cx) {
+    closeEditor(true);
+    editor.ctx = cx;
+    const it = cx.item, box = itemBox(it), el = $("wbEdit"), scale = $("wbBoard").getBoundingClientRect().width / WB_W;
+    let x = box.x, y = box.y, w = box.w, h = box.h, fs = it.width, value = "";
+    if (cx.mode === "text") value = it.text || "";
+    else {
+      const cw = box.w / it.cols, rh = box.h / it.rows;
+      x = box.x + cx.c * cw; y = box.y + cx.r * rh; w = cw; h = rh; fs = Math.max(10, Math.min(rh * 0.5, 28));
+      value = ((it.cells || [])[cx.r] || [])[cx.c] || "";
+    }
+    Object.assign(el.style, { left: x * scale + "px", top: y * scale + "px", width: Math.max(80, w * scale) + "px",
+      height: Math.max(30, h * scale) + "px", fontSize: Math.max(11, fs * scale) + "px" });
+    el.value = value; el.hidden = false; el.focus();
+  }
+  function closeEditor(commit) {
+    const cx = editor.ctx; if (!cx) return;
+    editor.ctx = null;
+    const el = $("wbEdit"), value = el.value; el.hidden = true;
+    if (!commit) return;
+    const it = cx.item;
+    if (cx.mode === "text") {
+      if (!value.trim()) { if (!cx.isNew) wbRemoveItem(it.id); return; }
+      it.text = value.slice(0, 1000);
+      liveCtx.save(); liveCtx.font = `${it.width}px ${FONT}`;
+      const lines = wrapLines(liveCtx, it.text, Math.max(60, itemBox(it).w) - 8).length; liveCtx.restore();
+      it.pts[1][1] = +Math.min(1, it.pts[0][1] + (lines * it.width * 1.25 + 8) / WB_H).toFixed(4);   // fit the frame to the text
+      if (cx.isNew) wbCommitNew(it); else wbCommitUpdate(it);
+    } else {
+      if (((it.cells[cx.r] || [])[cx.c] || "") === value) return;
+      it.cells[cx.r][cx.c] = value.slice(0, 200); wbCommitUpdate(it);
+    }
+  }
+  $("wbEdit").addEventListener("keydown", (ev) => {
+    const cx = editor.ctx; if (!cx) return;
+    if (ev.key === "Escape") { ev.preventDefault(); closeEditor(false); return; }
+    if (cx.mode === "text") { if (ev.key === "Enter" && (ev.ctrlKey || ev.metaKey)) { ev.preventDefault(); closeEditor(true); } return; }
+    if (ev.key === "Enter" || ev.key === "Tab") {                  // table cells: Tab = next cell, Enter = next row
+      ev.preventDefault();
+      const it = cx.item; let { r, c } = cx;
+      closeEditor(true);
+      if (ev.key === "Tab") { c += ev.shiftKey ? -1 : 1; if (c >= it.cols) { c = 0; r++; } if (c < 0) { c = it.cols - 1; r--; } } else r++;
+      if (r >= 0 && r < it.rows) openEditor({ mode: "cell", item: it, r, c });
+    }
+  });
+  $("wbEdit").addEventListener("blur", () => closeEditor(true));
+
   // ----- layout + toolbar
   function fitBoard() {
     const s = $("wbStage").getBoundingClientRect(), board = $("wbBoard");
@@ -928,6 +1095,7 @@
       Object.entries(data).forEach(([k, v]) => (b.dataset[k] = v)); $(parent).append(b); return b;
     };
     for (const [t, label] of [["pen", "Pen"], ["highlighter", "Marker"], ["eraser", "Eraser"]]) add("wbTool", label, label, () => { wbTool = t; wbRefresh(); }, { tool: t });
+    for (const [t, label] of [["text", "Text box"], ["table", "Table"]]) add("wbText", label, label, () => { wbTool = t; wbRefresh(); }, { tool: t });
     for (const w of [3, 6, 11, 18]) {
       const d = Math.max(4, w);
       add("wbWidth", `<span style="display:block;width:${d}px;height:${d}px;border-radius:50%;background:currentColor"></span>`, "Line width", () => { wbWidth = w; wbRefresh(); }, { width: w });
@@ -939,7 +1107,8 @@
     }
   }
   function wbRefresh() {
-    document.querySelectorAll("#wbTool button").forEach((b) => b.classList.toggle("sel", wbTool === b.dataset.tool));
+    document.querySelectorAll("#wbTool button, #wbText button").forEach((b) => b.classList.toggle("sel", wbTool === b.dataset.tool));
+    $("wbTableOpts").hidden = wbTool !== "table";
     document.querySelectorAll("#wbWidth button").forEach((b) => b.classList.toggle("sel", wbWidth === +b.dataset.width));
     document.querySelectorAll("#wbShapes button").forEach((b) => b.classList.toggle("sel", wbTool === "shape" && wbShape === b.dataset.shape && wbFill === +b.dataset.fill));
     document.querySelectorAll("#wbColors button").forEach((b) => { b.style.outline = wbColor === b.dataset.color ? "3px solid #93c5fd" : "2px solid #4b5563"; });
@@ -948,7 +1117,7 @@
     $("wbHandToggle").classList.toggle("sel", hand.on);
   }
   function openWb() { refreshCams(); wbOpen = true; $("wb").hidden = false; $("btnWb").classList.add("on"); fitBoard(); wbRedraw(); }
-  function closeWb() { stopHand(); wbEnd(); wbOpen = false; $("wb").hidden = true; $("btnWb").classList.remove("on"); }
+  function closeWb() { closeEditor(true); wbCur = null; stopHand(); liveCtx.clearRect(0, 0, WB_W, WB_H); wbOpen = false; $("wb").hidden = true; $("btnWb").classList.remove("on"); }
   $("btnWb").onclick = () => (wbOpen ? closeWb() : openWb());
   $("wbClose").onclick = closeWb;
   $("wbUndo").onclick = wbUndo;
