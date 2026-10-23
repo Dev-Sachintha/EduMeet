@@ -56,6 +56,10 @@ class Settings(BaseSettings):
     ai_max_parallel_transcriptions: int = 2
     ai_calls_per_10_min: int = 20
     max_material_mb: int = 300
+
+    # attendance
+    attendance_grace_minutes: int = 10      # joining later than this after the start = late
+    attendance_min_percent: int = 50        # present for at least this % of the session = attended
     cors_origins: str = "*"
 
     stun_urls: str = "stun:stun.l.google.com:19302"

@@ -82,6 +82,8 @@ class ConnectionManager:
         self.whiteboard: dict[str, dict] = {}
         # AI captions: room code -> peer_id of the host/admin who switched them on
         self.captions: dict[str, str] = {}
+        # Roll call: room code -> {"id", "ends" (datetime), "acked" (set of user ids)}
+        self.rollcalls: dict[str, dict] = {}
 
     async def join(self, code: str, peer: Peer) -> None:
         room = self.rooms.setdefault(code, {})
@@ -90,7 +92,8 @@ class ConnectionManager:
         await peer.send(
             {"type": "welcome", "peer_id": peer.peer_id, "is_host": peer.is_host,
              "you": peer.public(), "peers": existing,
-             "recording": code in self.recording, "captions": code in self.captions}
+             "recording": code in self.recording, "captions": code in self.captions,
+             "rollcall": self.rollcall_public(code)}
         )
         board = self.whiteboard.get(code)
         if board and (board["items"] or board["locked"]):
@@ -115,6 +118,7 @@ class ConnectionManager:
             self.pending.pop(code, None)
             self.whiteboard.pop(code, None)
             self.captions.pop(code, None)
+            self.rollcalls.pop(code, None)
         else:
             await self.broadcast(code, {"type": "peer_left", "peer_id": peer_id})
             if was_recording:
@@ -131,6 +135,13 @@ class ConnectionManager:
         peer = self.rooms.get(code, {}).get(peer_id)
         if peer:
             await peer.send(message)
+
+    def rollcall_public(self, code: str) -> dict | None:
+        state = self.rollcalls.get(code)
+        if not state:
+            return None
+        left = (state["ends"] - datetime.now(timezone.utc)).total_seconds()
+        return {"id": state["id"], "seconds_left": int(left)} if left > 0 else None
 
     def board(self, code: str) -> dict:
         return self.whiteboard.setdefault(code, {"items": [], "locked": False})
@@ -183,6 +194,7 @@ class ConnectionManager:
         self.recording.pop(code, None)
         self.whiteboard.pop(code, None)
         self.captions.pop(code, None)
+        self.rollcalls.pop(code, None)
         peers = list(self.rooms.pop(code, {}).values())
         for peer in peers:
             await peer.send({"type": "meeting_ended"})

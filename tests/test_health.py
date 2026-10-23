@@ -39,3 +39,10 @@ def test_device_test_page_is_served():
     r = client.get("/device-test")
     assert r.status_code == 200
     assert "getUserMedia" in r.text
+
+
+def test_attendance_page_is_served():
+    r = client.get("/attendance/abc-defg-hij")
+    assert r.status_code == 200
+    assert "Live attendance" in r.text
+    assert client.get("/api/attendance/abc-defg-hij").status_code == 401

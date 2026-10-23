@@ -181,3 +181,37 @@ class MaterialDoc(Base):
     kind: Mapped[str] = mapped_column(String(20), default="text")
     text: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class MeetingRoster(Base):
+    """Students (or staff) who are EXPECTED in a meeting - needed to know who is absent."""
+
+    __tablename__ = "meeting_roster"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    meeting_id: Mapped[int] = mapped_column(ForeignKey("meetings.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+
+
+class AttendanceRollcall(Base):
+    __tablename__ = "attendance_rollcalls"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    meeting_id: Mapped[int] = mapped_column(ForeignKey("meetings.id", ondelete="CASCADE"), index=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    seconds: Mapped[int] = mapped_column(Integer, default=60)
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class AttendanceMark(Base):
+    """kind='manual': the teacher's override (present/late/absent/excused). kind='rollcall': a student's answer."""
+
+    __tablename__ = "attendance_marks"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    meeting_id: Mapped[int] = mapped_column(ForeignKey("meetings.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    kind: Mapped[str] = mapped_column(String(10), default="manual")
+    mark: Mapped[str] = mapped_column(String(10), default="present")
+    rollcall_id: Mapped[int | None] = mapped_column(nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

@@ -1,0 +1,297 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Live attendance</title>
+<style>
+  :root { --bg:#0f172a; --card:#1e293b; --line:#334155; --text:#e5e7eb; --muted:#94a3b8; --accent:#2563eb; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font-family:"Segoe UI", system-ui, sans-serif; padding:16px 20px 40px; }
+  body.embed { padding:10px 12px 30px; font-size:13px; } body.embed h1 { font-size:16px; }
+  header { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap; }
+  h1 { margin:0; font-size:22px; } .sub { color:var(--muted); font-size:13px; margin-top:2px; }
+  .hdr { display:flex; align-items:center; gap:8px; flex-wrap:wrap; font-size:12px; color:var(--muted); }
+  .live { width:10px; height:10px; border-radius:50%; background:#22c55e; animation:pulse 1.4s infinite; } .live.off { background:#ef4444; animation:none; }
+  @keyframes pulse { 50% { opacity:.3; } }
+  button { background:#374151; color:#fff; border:0; border-radius:8px; padding:8px 12px; cursor:pointer; font-size:13px; }
+  button:hover { background:#4b5563; } button.sel, button.primary { background:var(--accent); } button.danger { background:#dc2626; }
+  .cards { display:grid; grid-template-columns:repeat(auto-fit, minmax(110px, 1fr)); gap:8px; margin:14px 0; }
+  .stat { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:10px 12px; }
+  .stat b { display:block; font-size:24px; } .stat span { color:var(--muted); font-size:12px; }
+  .tabs { display:flex; gap:6px; margin-bottom:12px; flex-wrap:wrap; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:12px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(300px, 1fr)); gap:12px; } .wide { grid-column:1 / -1; }
+  .card h3 { margin:0 0 8px; font-size:14px; color:#cbd5e1; display:flex; justify-content:space-between; align-items:center; gap:8px; }
+  canvas { width:100%; height:280px; display:block; }
+  table { width:100%; border-collapse:collapse; font-size:13px; } th, td { text-align:left; padding:7px 8px; border-bottom:1px solid var(--line); }
+  th { color:var(--muted); font-weight:600; } .scroll { overflow-x:auto; }
+  .badge { display:inline-block; padding:2px 9px; border-radius:999px; font-size:12px; font-weight:600; color:#0f172a; }
+  .tag { font-size:11px; background:#f59e0b; color:#111; border-radius:6px; padding:1px 6px; margin-left:4px; }
+  select, input[type=text], input[type=number] { background:#0f172a; color:var(--text); border:1px solid var(--line); border-radius:8px; padding:7px; font-size:13px; }
+  .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:10px; }
+  .note { color:var(--muted); font-size:12px; margin-top:10px; line-height:1.5; }
+  .item { display:flex; justify-content:space-between; align-items:center; gap:8px; padding:6px 0; border-bottom:1px solid var(--line); }
+  [hidden] { display:none !important; } .msg { color:#fbbf24; font-size:13px; min-height:18px; margin:6px 0; }
+</style>
+</head>
+<body>
+<header>
+  <div><h1 id="title">Live attendance</h1><div class="sub" id="sub">Loading...</div></div>
+  <div class="hdr"><span class="live" id="dot"></span><span id="upd">connecting...</span>
+    <button id="btnCsv">Export CSV</button><button id="btnRefresh">Refresh</button></div>
+</header>
+<div class="msg" id="msg"></div>
+<section class="cards" id="cards"></section>
+<nav class="tabs">
+  <button data-tab="list" class="sel">Live list</button><button data-tab="charts">Charts</button>
+  <button data-tab="roster">Roster</button><button data-tab="roll">Roll call</button>
+</nav>
+
+<main>
+  <div data-pane="list" class="card scroll">
+    <table><thead><tr><th>Name</th><th>Status</th><th>First joined</th><th>Minutes</th><th>%</th><th>Roll calls</th><th>Mark</th></tr></thead><tbody id="rows"></tbody></table>
+    <div class="note" id="listNote"></div>
+  </div>
+
+  <div data-pane="charts" hidden>
+    <div class="grid">
+      <div class="card"><h3>Attendance now (pie)</h3><canvas id="cPie"></canvas></div>
+      <div class="card"><h3>Minutes present per student (bar)</h3><canvas id="cBar"></canvas></div>
+      <div class="card wide"><h3><span>Attendance over time (line)</span>
+        <select id="lineMode"><option value="meeting">This meeting: people over time</option><option value="trend">Improvement: attendance % per meeting</option></select></h3>
+        <canvas id="cLine" style="height:300px"></canvas></div>
+    </div>
+  </div>
+
+  <div data-pane="roster" hidden class="card">
+    <p class="note" style="margin-top:0">The roster is the list of people who are <b>expected</b>. It is how EduMeet knows who is <b>absent</b>.</p>
+    <div class="row"><input type="text" id="rSearch" placeholder="Search name or email to add" style="flex:1; min-width:180px"><button id="btnSearch">Search</button></div>
+    <div id="rResults"></div>
+    <div class="row"><button id="btnAddJoined" class="primary">Add everyone who has joined</button>
+      <select id="rCopy"><option value="">Copy roster from another meeting...</option></select><button id="btnCopy">Copy</button></div>
+    <h3 style="margin:12px 0 4px; font-size:14px">On the roster (<span id="rCount">0</span>)</h3>
+    <div id="rList"></div>
+  </div>
+
+  <div data-pane="roll" hidden class="card">
+    <p class="note" style="margin-top:0">A roll call shows an <b>I am here</b> button to everyone in the room for a short time. It proves that a person is really there, not just connected.</p>
+    <div class="row"><label>Seconds <input type="number" id="rcSecs" value="60" min="15" max="600" style="width:80px"></label>
+      <button id="rcStart" class="primary">Start roll call</button><button id="rcStop" class="danger">Stop</button></div>
+    <div id="rcInfo" class="note"></div>
+  </div>
+</main>
+
+<script>
+(() => {
+  "use strict";
+  const $ = (id) => document.getElementById(id);
+  const hash = new URLSearchParams(location.hash.slice(1));
+  const code = decodeURIComponent(location.pathname.split("/").filter(Boolean).pop() || "");
+  const token = hash.get("token");
+  if (hash.get("embed") === "1") document.body.classList.add("embed");
+  history.replaceState(null, "", location.pathname);
+
+  const META = {
+    present_now: { label: "In meeting now", color: "#22c55e" }, left: { label: "Left (attended)", color: "#3b82f6" },
+    left_early: { label: "Left early", color: "#f59e0b" }, absent: { label: "Absent", color: "#ef4444" },
+    excused: { label: "Excused", color: "#94a3b8" },
+  };
+  let data = null, tab = "list", busy = false;
+
+  async function api(path, opts = {}) {
+    const r = await fetch(`/api/attendance/${encodeURIComponent(code)}${path}`, {
+      ...opts, headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
+    });
+    let d = null; try { d = await r.json(); } catch (e) {}
+    if (!r.ok) throw new Error((d && d.detail) || "HTTP " + r.status);
+    return d;
+  }
+  const mk = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; };
+  const fmtTime = (iso) => { try { return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }); } catch (e) { return "-"; } };
+  const say = (t) => { $("msg").textContent = t || ""; };
+
+  // ---------------- loading ----------------
+  async function load() {
+    if (busy) return; busy = true;
+    try {
+      data = await api("");
+      $("dot").classList.remove("off"); $("upd").textContent = "updated " + new Date().toLocaleTimeString();
+      render();
+    } catch (e) { $("dot").classList.add("off"); $("upd").textContent = "not updating"; say(e.message); }
+    busy = false;
+  }
+
+  // ---------------- rendering ----------------
+  function render() {
+    const s = data.summary, ses = data.session;
+    $("title").textContent = "Live attendance - " + ses.title;
+    $("sub").textContent = ses.start
+      ? `Started ${fmtTime(ses.start)} - ${ses.minutes} min ${ses.status === "ended" ? "(ended)" : "so far"} - late after ${ses.grace} min - attended = present at least ${ses.min_percent}% of the time`
+      : "Nobody has joined yet. Attendance appears here as soon as people join.";
+    const cards = [
+      ["In meeting now", s.present_now, META.present_now.color], ["Left (attended)", s.left, META.left.color],
+      ["Left early", s.left_early, META.left_early.color], ["Absent", s.absent, META.absent.color],
+      ["Excused", s.excused, META.excused.color], ["Late", s.late, "#f59e0b"],
+      ["Attendance rate", s.rate === null ? "-" : s.rate + "%", "#e5e7eb"], ["On roster", s.roster_size, "#e5e7eb"],
+    ];
+    $("cards").textContent = "";
+    for (const [label, value, color] of cards) { const c = mk("div", "stat"); const b = mk("b", "", String(value)); b.style.color = color; c.append(b, mk("span", "", label)); $("cards").append(c); }
+    if (!(document.activeElement && document.activeElement.tagName === "SELECT")) renderRows();   // do not close an open dropdown
+    if (tab === "charts") drawCharts();
+    renderRoster(); renderRoll();
+  }
+  function renderRows() {
+    const body = $("rows"); body.textContent = "";
+    for (const r of data.rows) {
+      const tr = mk("tr"), m = META[r.status];
+      const name = mk("td", "", r.name); if (r.late) name.append(mk("span", "tag", "late")); if (!r.on_roster) name.append(mk("span", "tag", "guest"));
+      const badge = mk("span", "badge", m.label); badge.style.background = m.color;
+      const st = mk("td"); st.append(badge);
+      const sel = mk("select"); sel.dataset.uid = r.user_id;
+      for (const [v, l] of [["clear", "Auto"], ["present", "Present"], ["late", "Late"], ["absent", "Absent"], ["excused", "Excused"]]) sel.add(new Option(l, v));
+      sel.value = r.mark || "clear";
+      sel.onchange = async () => { try { await api("/mark", { method: "POST", body: JSON.stringify({ user_id: +sel.dataset.uid, mark: sel.value }) }); sel.blur(); load(); } catch (e) { say(e.message); } };
+      const mark = mk("td"); mark.append(sel);
+      tr.append(name, st, mk("td", "", r.first_join ? fmtTime(r.first_join) : "-"), mk("td", "", String(r.minutes)),
+        mk("td", "", r.percent + "%"), mk("td", "", r.rollcalls_total ? `${r.rollcalls_answered}/${r.rollcalls_total}` : "-"), mark);
+      body.append(tr);
+    }
+    $("listNote").textContent = data.rows.length ? "Attendance is marked automatically when people join and leave. Use the Mark box to override it." :
+      "No one to show yet. Add people in the Roster tab so absent students appear here too.";
+  }
+
+  // ---------------- charts (drawn with the canvas, no libraries) ----------------
+  function prep(cv) {
+    const dpr = window.devicePixelRatio || 1, w = cv.clientWidth, h = cv.clientHeight;
+    cv.width = Math.max(1, w * dpr); cv.height = Math.max(1, h * dpr);
+    const c = cv.getContext("2d"); c.setTransform(dpr, 0, 0, dpr, 0, 0); c.clearRect(0, 0, w, h);
+    c.font = "12px 'Segoe UI', sans-serif"; return { c, w, h };
+  }
+  function empty(c, w, h, text) { c.fillStyle = "#94a3b8"; c.textAlign = "center"; c.fillText(text, w / 2, h / 2); }
+  function drawPie() {
+    const { c, w, h } = prep($("cPie"));
+    const s = data.summary, slices = Object.keys(META).map((k) => ({ label: META[k].label, color: META[k].color, value: s[k] })).filter((x) => x.value > 0);
+    const total = slices.reduce((a, x) => a + x.value, 0);
+    if (!total) return empty(c, w, h, "No data yet");
+    const r = Math.min(w * 0.38, h * 0.42), cx = r + 16, cy = h / 2; let a0 = -Math.PI / 2;
+    for (const sl of slices) {
+      const a1 = a0 + (sl.value / total) * Math.PI * 2;
+      c.fillStyle = sl.color; c.beginPath(); c.moveTo(cx, cy); c.arc(cx, cy, r, a0, a1); c.closePath(); c.fill();
+      if (sl.value / total > 0.07) { const am = (a0 + a1) / 2; c.fillStyle = "#0f172a"; c.font = "bold 13px sans-serif"; c.textAlign = "center"; c.fillText(String(sl.value), cx + Math.cos(am) * r * 0.62, cy + Math.sin(am) * r * 0.62 + 4); }
+      a0 = a1;
+    }
+    c.font = "13px 'Segoe UI', sans-serif"; c.textAlign = "left";
+    slices.forEach((sl, i) => { const y = 28 + i * 24; c.fillStyle = sl.color; c.fillRect(cx + r + 24, y - 11, 14, 14); c.fillStyle = "#e5e7eb"; c.fillText(`${sl.label}: ${sl.value} (${Math.round(sl.value / total * 100)}%)`, cx + r + 46, y); });
+  }
+  function drawBars() {
+    const { c, w, h } = prep($("cBar"));
+    const items = data.rows.slice().sort((a, b) => b.minutes - a.minutes).slice(0, 12);
+    if (!items.length) return empty(c, w, h, "No data yet");
+    const left = 110, right = 46, top = 8, rowH = Math.min(30, (h - top - 8) / items.length), max = Math.max(1, ...items.map((i) => i.minutes));
+    c.textBaseline = "middle";
+    items.forEach((it, i) => {
+      const y = top + i * rowH + rowH / 2, bw = (w - left - right) * (it.minutes / max);
+      let label = it.name; while (label.length > 3 && c.measureText(label).width > left - 12) label = label.slice(0, -2) + "\u2026";
+      c.fillStyle = "#cbd5e1"; c.textAlign = "right"; c.fillText(label, left - 8, y);
+      c.fillStyle = META[it.status].color; c.fillRect(left, y - rowH * 0.32, Math.max(2, bw), rowH * 0.64);
+      c.fillStyle = "#e5e7eb"; c.textAlign = "left"; c.fillText(it.minutes + " min", left + bw + 6, y);
+    });
+  }
+  function drawLine() {
+    const { c, w, h } = prep($("cLine")), mode = $("lineMode").value;
+    let xs = [], series = [], yMax = 1, unit = "";
+    if (mode === "meeting") {
+      const t = data.timeline; xs = t.map((p) => p.minute + " min");
+      series = [{ name: "People in the meeting", color: "#3b82f6", v: t.map((p) => p.people) }, { name: "Roster members present", color: "#22c55e", v: t.map((p) => p.roster) }];
+      yMax = Math.max(1, ...series.flatMap((s) => s.v));
+    } else {
+      const t = data.trend; xs = t.map((p) => p.label); series = [{ name: "Attendance rate %", color: "#f59e0b", v: t.map((p) => p.rate) }]; yMax = 100; unit = "%";
+    }
+    if (!xs.length) return empty(c, w, h, mode === "meeting" ? "No data yet" : "Needs a roster and at least one meeting");
+    const L = 44, R = 16, T = 28, B = 42, pw = w - L - R, ph = h - T - B, n = xs.length;
+    const px = (i) => L + (n === 1 ? pw / 2 : (i / (n - 1)) * pw), py = (v) => T + ph - (v / yMax) * ph;
+    c.strokeStyle = "#334155"; c.fillStyle = "#94a3b8"; c.textAlign = "right"; c.textBaseline = "middle";
+    for (let k = 0; k <= 4; k++) { const v = (yMax * k) / 4, y = py(v); c.beginPath(); c.moveTo(L, y); c.lineTo(w - R, y); c.stroke(); c.fillText(Math.round(v) + unit, L - 6, y); }
+    c.textAlign = "center"; c.textBaseline = "top";
+    const every = Math.max(1, Math.ceil(n / 8)); xs.forEach((x, i) => { if (i % every === 0 || i === n - 1) c.fillText(x.length > 12 ? x.slice(0, 11) + "\u2026" : x, px(i), h - B + 8); });
+    series.forEach((s, si) => {
+      c.strokeStyle = s.color; c.lineWidth = 2.5; c.beginPath(); s.v.forEach((v, i) => (i ? c.lineTo(px(i), py(v)) : c.moveTo(px(i), py(v)))); c.stroke();
+      if (n <= 40) { c.fillStyle = s.color; s.v.forEach((v, i) => { c.beginPath(); c.arc(px(i), py(v), 3.5, 0, 7); c.fill(); }); }
+      c.fillStyle = s.color; c.textAlign = "left"; c.textBaseline = "middle"; c.fillRect(L + si * 190, 8, 12, 12); c.fillStyle = "#e5e7eb"; c.fillText(s.name, L + si * 190 + 18, 14);
+    });
+  }
+  function drawCharts() { drawPie(); drawBars(); drawLine(); }
+
+  // ---------------- roster ----------------
+  function renderRoster() {
+    const list = $("rList"), roster = data.rows.filter((r) => r.on_roster);
+    $("rCount").textContent = data.summary.roster_size; list.textContent = "";
+    for (const r of roster) {
+      const item = mk("div", "item"); item.append(mk("span", "", `${r.name}  (${r.email})`));
+      const b = mk("button", "", "Remove"); b.onclick = async () => { try { await api(`/roster/${r.user_id}`, { method: "DELETE" }); load(); } catch (e) { say(e.message); } };
+      item.append(b); list.append(item);
+    }
+    if (!roster.length) list.append(mk("div", "note", "Nobody yet. Search below, or press \"Add everyone who has joined\"."));
+  }
+  async function search() {
+    const q = $("rSearch").value.trim(), box = $("rResults"); box.textContent = "";
+    try {
+      const r = await fetch("/api/attendance/users/search?q=" + encodeURIComponent(q), { headers: { Authorization: "Bearer " + token } });
+      const users = await r.json(); if (!r.ok) throw new Error(users.detail || "HTTP " + r.status);
+      for (const u of users) {
+        const item = mk("div", "item"); item.append(mk("span", "", `${u.name} (${u.email}) - ${u.role}`));
+        const b = mk("button", "", "Add"); b.onclick = async () => { try { await api("/roster", { method: "POST", body: JSON.stringify({ user_ids: [u.id] }) }); item.remove(); load(); } catch (e) { say(e.message); } };
+        item.append(b); box.append(item);
+      }
+      if (!users.length) box.append(mk("div", "note", "No matching accounts."));
+    } catch (e) { say(e.message); }
+  }
+  $("btnSearch").onclick = search; $("rSearch").onkeydown = (e) => { if (e.key === "Enter") search(); };
+  $("btnAddJoined").onclick = async () => { try { const r = await api("/roster/joined", { method: "POST" }); say(`${r.added} added to the roster.`); load(); } catch (e) { say(e.message); } };
+  async function loadCopyList() {
+    try {
+      const r = await fetch("/api/meetings?mine=true", { headers: { Authorization: "Bearer " + token } }); if (!r.ok) return;
+      for (const m of await r.json()) if (m.code !== code) $("rCopy").add(new Option(`${m.title} (${m.code})`, m.code));
+    } catch (e) {}
+  }
+  $("btnCopy").onclick = async () => {
+    const from = $("rCopy").value; if (!from) return;
+    try { const r = await api("/roster/copy", { method: "POST", body: JSON.stringify({ from_code: from }) }); say(`${r.added} added from that meeting.`); load(); } catch (e) { say(e.message); }
+  };
+
+  // ---------------- roll call ----------------
+  function renderRoll() {
+    const rc = data.rollcall;
+    $("rcInfo").textContent = rc ? `Roll call running: ${rc.answered} of ${rc.in_room} people in the room answered (${rc.seconds_left} s left).` : "No roll call is running.";
+  }
+  $("rcStart").onclick = async () => { try { await api("/rollcall", { method: "POST", body: JSON.stringify({ action: "start", seconds: +$("rcSecs").value || 60 }) }); say("Roll call started."); load(); } catch (e) { say(e.message); } };
+  $("rcStop").onclick = async () => { try { await api("/rollcall", { method: "POST", body: JSON.stringify({ action: "stop" }) }); load(); } catch (e) { say(e.message); } };
+
+  // ---------------- export ----------------
+  $("btnCsv").onclick = () => {
+    if (!data) return;
+    const q = (v) => '"' + String(v ?? "").replace(/"/g, '""') + '"';
+    const head = ["Name", "Email", "Role", "On roster", "Status", "Late", "First joined", "Minutes", "Percent", "Joins", "Roll calls answered", "Roll calls total", "Manual mark"];
+    const lines = [head.map(q).join(",")].concat(data.rows.map((r) => [r.name, r.email, r.role, r.on_roster ? "yes" : "no", META[r.status].label, r.late ? "yes" : "no",
+      r.first_join || "", r.minutes, r.percent, r.joins, r.rollcalls_answered, r.rollcalls_total, r.mark].map(q).join(",")));
+    const url = URL.createObjectURL(new Blob(["\ufeff" + lines.join("\r\n")], { type: "text/csv" })), a = document.createElement("a");
+    a.href = url; a.download = `Attendance-${code}.csv`; document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 60000);
+  };
+
+  // ---------------- wiring ----------------
+  document.querySelectorAll("[data-tab]").forEach((b) => (b.onclick = () => {
+    tab = b.dataset.tab;
+    document.querySelectorAll("[data-tab]").forEach((x) => x.classList.toggle("sel", x === b));
+    document.querySelectorAll("[data-pane]").forEach((p) => (p.hidden = p.dataset.pane !== tab));
+    if (tab === "charts" && data) drawCharts();
+  }));
+  $("lineMode").onchange = () => data && drawLine();
+  $("btnRefresh").onclick = load;
+  window.addEventListener("resize", () => { if (tab === "charts" && data) drawCharts(); });
+  window.addEventListener("message", (e) => { if (e.origin === location.origin && e.data === "refresh") load(); });   // the room nudges us when someone joins/leaves
+  if (!token) { say("Missing sign-in token. Open this page from the EduMeet app."); } else { load(); loadCopyList(); setInterval(load, 4000); }
+})();
+</script>
+</body>
+</html>

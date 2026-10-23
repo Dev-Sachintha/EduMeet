@@ -220,6 +220,39 @@ class DeviceTestDialog(QDialog):
         super().done(result)
 
 
+class AttendanceDialog(QDialog):
+    """Live attendance with pie, bar and line charts (a page served by the backend)."""
+
+    def __init__(self, api: ApiClient, meeting: dict, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle(f"Attendance - {meeting['title']}")
+        self.resize(1100, 780)
+        self.view = QWebEngineView(self)
+        self.att_page = RoomPage(self.view)
+        self.view.setPage(self.att_page)
+        QWebEngineProfile.defaultProfile().downloadRequested.connect(self._on_download)  # Export CSV
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(self.view)
+        self.view.load(QUrl(f"{api.base_url}/attendance/{meeting['code']}#token={api.token}"))
+
+    def _on_download(self, item) -> None:
+        if item.page() is not self.att_page:
+            return
+        path, _ = QFileDialog.getSaveFileName(self, "Save file", item.downloadFileName() or "attendance.csv", "All files (*)")
+        if not path:
+            item.cancel()
+            return
+        target = Path(path)
+        item.setDownloadDirectory(str(target.parent))
+        item.setDownloadFileName(target.name)
+        item.accept()
+
+    def done(self, result: int) -> None:
+        self.view.setUrl(QUrl("about:blank"))
+        super().done(result)
+
+
 class NewMeetingDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -812,6 +845,8 @@ class MeetingsTab(QWidget):
         self.copy_btn.clicked.connect(self._copy_code)
         self.files_btn = make_secondary(QPushButton("Files..."))
         self.files_btn.clicked.connect(self._files)
+        self.att_btn = make_secondary(QPushButton("Attendance..."))
+        self.att_btn.clicked.connect(self._attendance)
         self.end_btn = make_secondary(QPushButton("End meeting"), danger=True)
         self.end_btn.clicked.connect(self._end)
         refresh_btn = make_secondary(QPushButton("Refresh"))
@@ -828,7 +863,7 @@ class MeetingsTab(QWidget):
         top.addWidget(self.mine_cb)
         top.addWidget(refresh_btn)
         bottom = QHBoxLayout()
-        for w in (self.join_btn, self.copy_btn, self.files_btn, self.end_btn):
+        for w in (self.join_btn, self.copy_btn, self.files_btn, self.att_btn, self.end_btn):
             bottom.addWidget(w)
         bottom.addStretch()
 
@@ -854,6 +889,7 @@ class MeetingsTab(QWidget):
         self.join_btn.setEnabled(has and m["status"] != "ended")
         self.copy_btn.setEnabled(has)
         self.files_btn.setEnabled(has)
+        self.att_btn.setEnabled(bool(has and (self.api.is_admin or m["host_id"] == self.api.user["id"])))
         can_end = has and m["status"] != "ended" and (self.api.is_admin or m["host_id"] == self.api.user["id"])
         self.end_btn.setEnabled(bool(can_end))
 
@@ -924,6 +960,11 @@ class MeetingsTab(QWidget):
         m = self._selected()
         if m:
             FilesDialog(self.api, m, self).exec()
+
+    def _attendance(self) -> None:
+        m = self._selected()
+        if m:
+            AttendanceDialog(self.api, m, self).exec()
 
     def _end(self) -> None:
         m = self._selected()

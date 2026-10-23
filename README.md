@@ -194,6 +194,31 @@ sign in once again after this update.
 
 ---
 
+## Live attendance (with live charts)
+
+Attendance is **marked automatically** from who joins and leaves, and it updates live.
+
+* **Hosts:** press **Attendance** in the room (a panel opens), or select a meeting on the dashboard and press
+  **Attendance...** (also works after the meeting ended).
+* **Live list:** each person is *In meeting now*, *Left (attended)*, *Left early*, *Absent* or *Excused*, with a **late** tag,
+  first join time, minutes present, % of the session and roll-call answers. The **Mark** box lets you override one person
+  (Present / Late / Absent / Excused / back to Auto).
+* **Charts** (refresh every 4 seconds): **pie** - status now, **bar** - minutes present per student, **line** - either
+  *people in the meeting over time* or *improvement: attendance % for your last meetings*.
+* **Roster:** the list of people who are *expected*. It is how EduMeet knows who is **absent**. Add people by search, press
+  **Add everyone who has joined** during the first class, or **copy the roster** from an earlier meeting.
+* **Roll call:** start it for 15-600 seconds; everyone in the room gets an **I am here** button (with a beep). Answers are
+  counted per student, so you can tell "really there" from "just connected".
+* **Export CSV** saves the table (opens in Excel).
+
+How it is worked out: *late* = first join more than `ATTENDANCE_GRACE_MINUTES` (10) after the host joined. *Attended* =
+in the meeting now, or present for at least `ATTENDANCE_MIN_PERCENT` (50 %) of the session so far. *Rate* =
+attended / (roster - excused). Only the host (and admins) can see attendance; students never see each other's records.
+Limits: attendance means *connected to the meeting* - a person can be connected and not paying attention (use roll calls);
+the trend chart needs a roster in each meeting.
+
+---
+
 ## AI features
 
 Open the **AI** button in the room (everyone) and **Captions** (host/admin).

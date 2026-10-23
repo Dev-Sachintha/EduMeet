@@ -37,6 +37,18 @@
               border-radius:999px; font-size:13px; font-weight:600; z-index:11; }
   #recBadge::before { content:"\25CF  "; animation:blink 1.2s infinite; }
   @keyframes blink { 50% { opacity:.25; } }
+  /* ---- attendance panel + roll call ---- */
+  #attPanel { position:absolute; top:12px; right:12px; bottom:12px; width:620px; max-width:calc(100% - 24px); background:#1f2937;
+              border:1px solid #374151; border-radius:14px; z-index:8; display:flex; flex-direction:column; padding:10px; gap:6px; }
+  #attPanel[hidden] { display:none !important; }
+  #attPanel .aihead { display:flex; justify-content:space-between; align-items:center; font-size:16px; }
+  #attPanel button { background:#374151; color:#fff; border:0; border-radius:8px; padding:6px 10px; cursor:pointer; }
+  #attFrame { flex:1; border:0; border-radius:10px; background:#0f172a; width:100%; }
+  #rcBox { position:fixed; left:50%; top:14px; transform:translateX(-50%); z-index:30; background:#1d4ed8; border-radius:14px;
+           padding:14px 22px; display:flex; gap:20px; align-items:center; box-shadow:0 8px 30px rgba(0,0,0,.5); font-size:16px; }
+  #rcBox[hidden] { display:none !important; }
+  #rcBtn { background:#16a34a; color:#fff; border:0; border-radius:10px; padding:12px 22px; font-size:17px; font-weight:600; cursor:pointer; }
+  #rcBtn:disabled { opacity:.8; cursor:default; }
   /* ---- AI panel + captions ---- */
   #ccBox { position:absolute; left:50%; bottom:14px; transform:translateX(-50%); max-width:70%; background:rgba(0,0,0,.8); color:#fff;
            padding:10px 16px; border-radius:10px; font-size:18px; line-height:1.45; z-index:9; text-align:center; }
@@ -152,6 +164,11 @@
       <div id="wbCursor" hidden></div>
     </section>
     <div id="ccBadge" hidden>CC - AI captions on</div>
+    <aside id="attPanel" hidden>
+      <div class="aihead"><b>Live attendance</b><button id="attClose" title="Close">&times;</button></div>
+      <iframe id="attFrame" title="Live attendance"></iframe>
+    </aside>
+    <div id="rcBox" hidden><div><b>Roll call</b><div id="rcTime"></div></div><button id="rcBtn">I am here</button></div>
     <div id="ccBox" hidden></div>
     <aside id="ai" hidden>
       <div class="aihead"><b>AI assistant</b><button id="aiClose" title="Close">&times;</button></div>
@@ -225,6 +242,7 @@
   <button class="ctl" id="btnWb">Whiteboard</button>
   <button class="ctl" id="btnCC" hidden>Captions</button>
   <button class="ctl" id="btnAI">AI</button>
+  <button class="ctl" id="btnAtt" hidden>Attendance</button>
   <button class="ctl" id="btnMuteAll" hidden>Mute all</button>
   <button class="ctl" id="btnRec" hidden>Record</button>
   <button class="ctl leave" id="btnLeave">Leave</button>
@@ -394,12 +412,13 @@
         document.querySelectorAll("#wb [data-host]").forEach((b) => (b.hidden = !isHost));
         $("btnCC").hidden = !isHost; document.querySelectorAll("#ai [data-teacher]").forEach((b) => (b.hidden = !isHost));
         if (m.captions) onCaptionsState(true, "");
+        $("btnAtt").hidden = !isHost; if (m.rollcall) showRollcall(m.rollcall.id, m.rollcall.seconds_left);
         for (const p of m.peers) createPeer(p, true);
         announceMedia();
         setStatus(m.peers.length ? "" : "You are the first one here. Share the meeting code!");
         break;
-      case "peer_joined": createPeer(m.peer, false); addChat("system", `${m.peer.name} joined`); break;
-      case "peer_left": { const e = peers.get(m.peer_id); if (e) addChat("system", `${e.info.name} left`); removePeer(m.peer_id); break; }
+      case "peer_joined": attNudge(); createPeer(m.peer, false); addChat("system", `${m.peer.name} joined`); break;
+      case "peer_left": { attNudge(); const e = peers.get(m.peer_id); if (e) addChat("system", `${e.info.name} left`); removePeer(m.peer_id); break; }
       case "signal": onSignal(m.from, m.data); break;
       case "chat": addChat(m.name, m.text, m.from === myId); break;
       case "media_state": {
@@ -411,6 +430,7 @@
       case "control_response": onControlResponse(m); break;
       case "control_input": if (bridge && controllerId === m.from) bridge.inject(JSON.stringify(m.data), m.from); break;
       case "control_stopped": onControlStopped(m); break;
+      case "rollcall": if (m.on) showRollcall(m.id, m.seconds_left); else hideRollcall(); break;
       case "captions": onCaptionsState(!!m.on, m.by || "The host"); break;
       case "caption":
         ai.lines.push({ name: m.name, text: m.text, ts: m.ts }); if (ai.loaded) trAdd(ai.lines[ai.lines.length - 1]);
@@ -521,6 +541,42 @@
   $("btnMuteAll").onclick = () => { send({ type: "mute_all" }); addChat("system", "You muted everyone"); };
   $("btnEnd").onclick = () => { if (confirm("End this meeting for everyone?")) send({ type: "end_meeting" }); };
   $("btnLeave").onclick = () => finish(0);
+
+  // ---------- attendance: host panel (live page in a frame) + roll call prompt for everyone ----------
+  const att = { open: false, loaded: false, timer: 0 };
+  function attNudge() {                                            // tell the attendance page that someone joined or left
+    const f = $("attFrame");
+    if (att.open && f && f.contentWindow) setTimeout(() => { try { f.contentWindow.postMessage("refresh", location.origin); } catch (e) {} }, 700);
+  }
+  function openAtt() {
+    att.open = true; $("attPanel").hidden = false; $("btnAtt").classList.add("on");
+    if (!att.loaded) { att.loaded = true; $("attFrame").src = `/attendance/${encodeURIComponent(code)}#token=${encodeURIComponent(token)}&embed=1`; }
+  }
+  function closeAtt() { att.open = false; $("attPanel").hidden = true; $("btnAtt").classList.remove("on"); }
+  $("btnAtt").onclick = () => (att.open ? closeAtt() : openAtt());
+  $("attClose").onclick = closeAtt;
+  function beep() {
+    try {
+      const ac = getAcx(); ac.resume().catch(() => {});
+      const o = ac.createOscillator(), g = ac.createGain(); o.frequency.value = 880; g.gain.value = 0.08; o.connect(g); g.connect(ac.destination);
+      o.start(); setTimeout(() => o.stop(), 350);
+    } catch (e) {}
+  }
+  function hideRollcall() { clearInterval(att.timer); $("rcBox").hidden = true; }
+  function showRollcall(id, secs) {
+    $("rcBox").hidden = false; const btn = $("rcBtn"); btn.disabled = false; btn.textContent = "I am here";
+    let left = Math.max(1, secs | 0); $("rcTime").textContent = left + " s left"; clearInterval(att.timer);
+    att.timer = setInterval(() => { left--; $("rcTime").textContent = Math.max(0, left) + " s left"; if (left <= 0) hideRollcall(); }, 1000);
+    beep();
+  }
+  $("rcBtn").onclick = async () => {
+    const btn = $("rcBtn"); btn.disabled = true;
+    try {
+      const r = await fetch(`/api/attendance/${encodeURIComponent(code)}/rollcall/ack`, { method: "POST", headers: { Authorization: "Bearer " + token } });
+      if (!r.ok) { let d = ""; try { d = (await r.json()).detail; } catch (e) {} throw new Error(d || "HTTP " + r.status); }
+      btn.textContent = "Marked present \u2713"; setTimeout(hideRollcall, 1500);
+    } catch (e) { btn.disabled = false; setStatus("Could not mark you: " + e.message); }
+  };
 
   // ---------- AI: live captions, transcript, summary + action items, assistant, quiz + notes ----------
   const ai = { open: false, loaded: false, history: [], lines: [], ccOn: false, running: false, failed: false,

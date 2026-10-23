@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from backend import admin, ai, auth, emailcheck, files, mailer, meetings, models, signaling  # noqa: F401  (models registers tables)
+from backend import admin, ai, attendance, auth, emailcheck, files, mailer, meetings, models, signaling  # noqa: F401  (models registers tables)
 from backend.config import BASE_DIR, settings
 from backend.database import Base, SessionLocal, engine, ensure_columns
 
@@ -38,6 +38,8 @@ app.include_router(auth.router)
 app.include_router(auth.admin_router)
 app.include_router(admin.router)
 app.include_router(ai.router)
+app.include_router(attendance.router)
+app.include_router(attendance.page_router)
 app.include_router(meetings.router)
 app.include_router(files.router)
 app.include_router(signaling.router)
