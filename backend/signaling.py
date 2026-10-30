@@ -26,7 +26,9 @@ from sqlalchemy import select
 from backend.audit import log_event
 from backend.database import SessionLocal
 from backend.deps import user_from_token
-from backend.models import Meeting, MeetingParticipant, Role, utcnow
+from backend.filekinds import kind_of
+from backend.models import Meeting, MeetingFile, MeetingParticipant, Role, utcnow
+from backend.polls import PollError, cast_vote, close_poll, create_poll, list_for_meeting
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
@@ -51,6 +53,7 @@ class Peer:
     hand_raised: bool = False
     cam_on: bool = False
     screen_on: bool = False
+    meeting_id: int = 0
 
     def public(self) -> dict:
         return {
@@ -61,6 +64,7 @@ class Peer:
             "hand_raised": self.hand_raised,
             "cam_on": self.cam_on,
             "screen_on": self.screen_on,
+            "user_id": self.user_id,
         }
 
     async def send(self, message: dict) -> None:
@@ -98,6 +102,10 @@ class ConnectionManager:
         board = self.whiteboard.get(code)
         if board and (board["items"] or board["locked"]):
             await peer.send({"type": "wb_state", "items": board["items"], "locked": board["locked"]})
+        if peer.meeting_id:
+            states, mine = list_for_meeting(peer.meeting_id, peer.user_id)
+            if states:
+                await peer.send({"type": "polls", "polls": states, "mine": mine})
         await self.broadcast(code, {"type": "peer_joined", "peer": peer.public()}, exclude=peer.peer_id)
 
     async def leave(self, code: str, peer_id: str) -> None:
@@ -341,6 +349,7 @@ async def meeting_socket(ws: WebSocket, code: str, token: str = Query(default=""
             name=user.full_name,
             role=user.role,
             is_host=(meeting.host_id == user.id or user.role == Role.admin.value),
+            meeting_id=meeting.id,
         )
 
     await manager.join(code, peer)
@@ -356,6 +365,24 @@ async def meeting_socket(ws: WebSocket, code: str, token: str = Query(default=""
         _record_leave(participant_id)
 
 
+def _chat_attachment(peer: Peer, file_id, audience: str, recipients: list[int] | None = None) -> dict | None:
+    """The file must be the sender's own upload in this meeting and match the message's audience."""
+    try:
+        file_id = int(file_id)
+    except (TypeError, ValueError):
+        return None
+    with SessionLocal() as db:
+        row = db.get(MeetingFile, file_id)
+        if row is None or row.meeting_id != peer.meeting_id or row.uploader_id != peer.user_id:
+            return None
+        if (row.audience or "everyone") != audience:
+            return None
+        if audience == "users" and set((row.recipients or "").split(",")) != {str(i) for i in (recipients or [])}:
+            return None
+        return {"id": row.id, "name": row.original_name, "size": row.size,
+                "kind": kind_of(row.original_name, row.content_type), "content_type": row.content_type}
+
+
 async def _handle(code: str, peer: Peer, msg: dict) -> None:
     kind = msg.get("type")
 
@@ -366,12 +393,77 @@ async def _handle(code: str, peer: Peer, msg: dict) -> None:
 
     elif kind == "chat":
         text = str(msg.get("text", "")).strip()[:2000]
-        if text:
-            await manager.broadcast(
-                code,
-                {"type": "chat", "from": peer.peer_id, "name": peer.name, "text": text,
-                 "ts": datetime.now(timezone.utc).isoformat()},
-            )
+        to = msg.get("to")
+        audience = "host" if to == "host" else "users" if to == "users" else "everyone"
+        room = manager.rooms.get(code, {})
+        targets: list[Peer] = []
+        if audience == "users":  # the host writes to chosen people only
+            if not peer.is_host:
+                await peer.send({"type": "error", "message": "Only the host can message selected people."})
+                return
+            raw_ids = msg.get("user_ids") if isinstance(msg.get("user_ids"), list) else []
+            wanted = {int(x) for x in raw_ids if str(x).isdigit()}
+            targets = [p for p in room.values() if p.user_id in wanted and p.peer_id != peer.peer_id]
+            if not targets:
+                await peer.send({"type": "error", "message": "Choose at least one person who is in the meeting."})
+                return
+        recipient_ids = sorted({p.user_id for p in targets})
+        attachment = None
+        if msg.get("file_id") is not None:
+            attachment = _chat_attachment(peer, msg.get("file_id"), audience, recipient_ids)
+            if attachment is None:
+                await peer.send({"type": "error", "message": "That attachment could not be sent."})
+                return
+        if not text and attachment is None:
+            return
+        payload = {"type": "chat", "from": peer.peer_id, "name": peer.name, "text": text, "to": audience,
+                   "attachment": attachment, "ts": datetime.now(timezone.utc).isoformat()}
+        if audience == "host":
+            recipients = [p for p in room.values() if p.is_host or p.peer_id == peer.peer_id]
+            if not any(p.is_host and p.peer_id != peer.peer_id for p in recipients) and not peer.is_host:
+                await peer.send({"type": "error", "message": "No host or admin is in the meeting right now, so nobody received your private message."})
+                return
+            for recipient in recipients:
+                await recipient.send(payload)
+        elif audience == "users":
+            await peer.send({**payload, "to_names": [p.name for p in targets]})   # the sender sees who got it
+            for recipient in targets:
+                await recipient.send({**payload, "to_count": len(targets)})
+        else:
+            await manager.broadcast(code, payload)
+
+    # ---- polls: the host asks, everyone votes, results are shown live
+    elif kind == "poll_create":
+        if not peer.is_host:
+            await peer.send({"type": "error", "message": "Only the host can start a poll."})
+            return
+        try:
+            state = create_poll(peer.meeting_id, peer.user_id, peer.name, msg.get("question"), msg.get("options"),
+                                bool(msg.get("multiple")), bool(msg.get("anonymous")))
+        except PollError as exc:
+            await peer.send({"type": "error", "message": str(exc)})
+            return
+        await manager.broadcast(code, {"type": "poll", "poll": state})
+
+    elif kind == "poll_vote":
+        try:
+            state, mine = cast_vote(peer.meeting_id, peer.user_id, msg.get("poll_id"), msg.get("option_ids") or [])
+        except PollError as exc:
+            await peer.send({"type": "error", "message": str(exc)})
+            return
+        await manager.broadcast(code, {"type": "poll", "poll": state})
+        await peer.send({"type": "poll_my", "poll_id": state["id"], "option_ids": mine})
+
+    elif kind == "poll_close":
+        if not peer.is_host:
+            await peer.send({"type": "error", "message": "Only the host can close a poll."})
+            return
+        try:
+            state = close_poll(peer.meeting_id, msg.get("poll_id"))
+        except PollError as exc:
+            await peer.send({"type": "error", "message": str(exc)})
+            return
+        await manager.broadcast(code, {"type": "poll", "poll": state})
 
     elif kind == "raise_hand":
         peer.hand_raised = bool(msg.get("raised"))

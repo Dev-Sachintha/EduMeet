@@ -108,7 +108,7 @@
               border:3px solid #fff; pointer-events:none; z-index:30; }
   #wbCursor.g-draw { border-color:#ef4444; background:rgba(239,68,68,.25); } #wbCursor.g-hover { border-color:#3b82f6; }
   #wbCursor.g-erase { width:46px; height:46px; margin:-23px 0 0 -23px; border-color:#9ca3af; } #wbCursor.g-fist { border-color:#f59e0b; }
-  #side { width:300px; background:var(--panel); display:flex; flex-direction:column; border-left:1px solid #334155; }
+  #side { position:relative; width:360px; background:var(--panel); display:flex; flex-direction:column; border-left:1px solid #334155; }
   #side.hidden { display:none; }
   #chatlog { flex:1; overflow-y:auto; padding:12px; font-size:14px; }
   .msg { margin-bottom:10px; word-wrap:break-word; }
@@ -126,6 +126,40 @@
   button.ctl.on { background:var(--ok); }
   button.ctl.leave { background:var(--danger); }
   button.send { background:var(--accent); color:#fff; border:0; border-radius:6px; padding:8px 12px; cursor:pointer; }
+  /* ---- chat: private messages, attachments, voice messages, polls ---- */
+  .cm { margin-bottom:10px; word-wrap:break-word; } .cm .hd { font-size:12px; color:var(--muted); } .cm .hd b { color:#93c5fd; font-size:13px; }
+  .cm.mine .hd b { color:#86efac; }
+  .cm .tag { background:#7c3aed; color:#fff; border-radius:6px; padding:1px 6px; margin-left:6px; font-size:11px; }
+  .cm .body { margin-top:2px; white-space:pre-wrap; }
+  .cm .att { margin-top:6px; background:#0f172a; border:1px solid #334155; border-radius:10px; padding:8px; }
+  .cm .att img, .cm .att video { max-width:100%; max-height:220px; border-radius:8px; display:block; } .cm .att img { cursor:zoom-in; }
+  .cm .att audio { width:100%; } .cm .fn { font-size:12px; color:var(--muted); margin-top:4px; word-break:break-all; }
+  .cm .dl { margin-top:6px; background:#334155; color:#fff; border:0; border-radius:6px; padding:5px 10px; cursor:pointer; font-size:12px; }
+  .poll { background:#0f172a; border:1px solid #334155; border-radius:12px; padding:10px; margin-bottom:12px; }
+  .poll .pq { font-weight:600; } .poll .pm { font-size:12px; color:var(--muted); margin:2px 0 6px; } .poll .who { font-size:11px; color:var(--muted); margin-top:2px; }
+  .popt { position:relative; display:flex; justify-content:space-between; width:100%; margin-top:5px; padding:8px 10px; background:#1e293b; color:#fff;
+          border:1px solid #334155; border-radius:8px; cursor:pointer; text-align:left; overflow:hidden; font-size:13px; }
+  .popt.on { border-color:#22c55e; } .popt:disabled { cursor:default; opacity:.85; }
+  .popt .pbar { position:absolute; left:0; top:0; bottom:0; background:rgba(37,99,235,.35); } .popt span { position:relative; }
+  .poll .pclose { margin-top:8px; background:#dc2626; color:#fff; border:0; border-radius:6px; padding:5px 10px; cursor:pointer; font-size:12px; }
+  #chatform { flex-wrap:wrap; align-items:center; }
+  #chatform select { background:#0f172a; color:var(--text); border:1px solid #334155; border-radius:6px; padding:7px; max-width:150px; }
+  #chatform #chatinput { min-width:110px; }
+  #btnAttach { background:#334155; color:#fff; border:0; border-radius:6px; padding:7px 10px; cursor:pointer; font-size:16px; }
+  #pendBar, #voiceBar, #chatToNote { display:flex; align-items:center; gap:8px; padding:6px 10px; font-size:12px; background:#0f172a; border-top:1px solid #334155; flex-wrap:wrap; }
+  #pendBar[hidden], #voiceBar[hidden], #chatToNote[hidden] { display:none !important; }
+  #pendBar audio { height:30px; max-width:200px; } .rdot { color:#ef4444; animation:blink 1.2s infinite; }
+  #pendBar button, #voiceBar button { background:#334155; color:#fff; border:0; border-radius:6px; padding:4px 10px; cursor:pointer; }
+  .pop { position:absolute; left:8px; right:8px; bottom:64px; background:#1e293b; border:1px solid #475569; border-radius:12px; padding:10px; z-index:15;
+         box-shadow:0 8px 28px rgba(0,0,0,.5); max-height:70%; overflow-y:auto; font-size:13px; }
+  .pop[hidden] { display:none !important; }
+  .pop button.mi { display:block; width:100%; text-align:left; background:transparent; color:#fff; border:0; padding:9px 8px; border-radius:8px; cursor:pointer; font-size:14px; }
+  .pop button.mi:hover { background:#334155; } .pop label { display:flex; gap:8px; align-items:center; padding:5px 2px; cursor:pointer; }
+  .pop input[type=text] { width:100%; background:#0f172a; color:var(--text); border:1px solid #334155; border-radius:6px; padding:7px; margin-top:5px; }
+  .pop .row2 { display:flex; gap:8px; margin-top:8px; } .pop .row2 button { background:#334155; color:#fff; border:0; border-radius:6px; padding:6px 12px; cursor:pointer; }
+  .pop .row2 button.go { background:var(--accent); }
+  #lightbox { position:fixed; inset:0; background:rgba(0,0,0,.85); z-index:60; display:flex; align-items:center; justify-content:center; cursor:zoom-out; }
+  #lightbox[hidden] { display:none !important; } #lightbox img { max-width:92%; max-height:92%; border-radius:8px; }
   [hidden] { display:none !important; }
   #status { position:fixed; top:12px; left:50%; transform:translateX(-50%); background:rgba(15,23,42,.95);
             border:1px solid #334155; padding:8px 16px; border-radius:8px; font-size:14px; display:none; z-index:10; }
@@ -228,9 +262,21 @@
   </main>
   <aside id="side" class="hidden">
     <div id="chatlog"></div>
-    <form id="chatform"><input id="chatinput" autocomplete="off" maxlength="2000" placeholder="Message everyone">
-      <button class="send">Send</button></form>
+    <div id="pendBar" hidden><span id="pendName"></span><audio id="pendAudio" controls hidden></audio><button type="button" id="pendClear" title="Remove">&times;</button></div>
+    <div id="voiceBar" hidden><span class="rdot">&#9679;</span> Recording <b id="voiceTime">0:00</b>
+      <button type="button" id="voiceCancel">Cancel</button><button type="button" id="voiceDone">Stop</button></div>
+    <div id="chatToNote" hidden></div>
+    <form id="chatform">
+      <button type="button" id="btnAttach" title="Attach an image, video, audio, PDF, voice message or poll">&#128206;</button>
+      <select id="chatTo" title="Who receives this message"></select>
+      <input id="chatinput" autocomplete="off" maxlength="2000" placeholder="Type a message">
+      <button class="send">Send</button>
+    </form>
+    <div id="attachMenu" class="pop" hidden></div>
+    <div id="peoplePick" class="pop" hidden></div>
+    <div id="pollForm" class="pop" hidden></div>
   </aside>
+  <div id="lightbox" hidden><img alt=""></div>
 </div>
 <footer id="bar">
   <button class="ctl" id="btnMic">Mute</button>
@@ -413,14 +459,18 @@
         $("btnCC").hidden = !isHost; document.querySelectorAll("#ai [data-teacher]").forEach((b) => (b.hidden = !isHost));
         if (m.captions) onCaptionsState(true, "");
         $("btnAtt").hidden = !isHost; if (m.rollcall) showRollcall(m.rollcall.id, m.rollcall.seconds_left);
+        chatRefresh();
         for (const p of m.peers) createPeer(p, true);
         announceMedia();
         setStatus(m.peers.length ? "" : "You are the first one here. Share the meeting code!");
         break;
-      case "peer_joined": attNudge(); createPeer(m.peer, false); addChat("system", `${m.peer.name} joined`); break;
-      case "peer_left": { attNudge(); const e = peers.get(m.peer_id); if (e) addChat("system", `${e.info.name} left`); removePeer(m.peer_id); break; }
+      case "peer_joined": attNudge(); createPeer(m.peer, false); chatRefresh(); addChat("system", `${m.peer.name} joined`); break;
+      case "peer_left": { attNudge(); const e = peers.get(m.peer_id); if (e) addChat("system", `${e.info.name} left`); removePeer(m.peer_id); chatRefresh(); break; }
       case "signal": onSignal(m.from, m.data); break;
-      case "chat": addChat(m.name, m.text, m.from === myId); break;
+      case "chat": chatShow(m); break;
+      case "polls": pollsInit(m); break;
+      case "poll": pollUpdate(m.poll); break;
+      case "poll_my": pollMine(m.poll_id, m.option_ids); break;
       case "media_state": {
         const e = peers.get(m.peer_id);
         if (e) { e.tile.classList.toggle("nocam", !m.cam); e.tile.classList.toggle("screen", !!m.screen); e.ctlBtn.hidden = !m.screen; }
@@ -533,11 +583,220 @@
     $("btnHand").textContent = handRaised ? "Lower hand" : "Raise hand"; $("btnHand").classList.toggle("on", handRaised);
     selfTile.label.textContent = myName + " (you)" + (handRaised ? " \u270B" : "");
   };
-  $("btnChat").onclick = () => $("side").classList.toggle("hidden");
-  $("chatform").onsubmit = (e) => {
-    e.preventDefault(); const i = $("chatinput"), text = i.value.trim();
-    if (text) { send({ type: "chat", text }); i.value = ""; }
+  // ---------- chat: who receives it, attachments, voice messages and polls ----------
+  const chat = { to: "everyone", users: new Set(), pending: null, unread: 0, links: new Map(), polls: new Map(), mine: new Map() };
+  const chatEnc = () => encodeURIComponent(code);
+  const chatAuth = () => ({ Authorization: "Bearer " + token });
+  const fmtBytes = (n) => (n > 1048576 ? (n / 1048576).toFixed(1) + " MB" : Math.max(1, Math.round(n / 1024)) + " KB");
+  const chatEl = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; };
+  const peopleNames = () => [...peers.values()].filter((e) => chat.users.has(e.info.user_id)).map((e) => e.info.name);
+  function chatBadge() { $("btnChat").textContent = chat.unread ? `Chat (${chat.unread})` : "Chat"; }
+  function chatToggle() {
+    const side = $("side"); side.classList.toggle("hidden");
+    if (!side.classList.contains("hidden")) { chat.unread = 0; chatBadge(); chatRefresh(); $("chatlog").scrollTop = $("chatlog").scrollHeight; }
+  }
+  $("btnChat").onclick = chatToggle;
+  function closePops() { for (const id of ["attachMenu", "peoplePick", "pollForm"]) $(id).hidden = true; }
+  document.addEventListener("click", (e) => { if (!e.target.closest(".pop, #btnAttach, #chatTo")) closePops(); });
+
+  // --- who gets the message: everyone, or (students) host/admin only, or (host) selected people
+  function chatRefresh() {
+    const sel = $("chatTo"), prev = chat.to; sel.textContent = "";
+    sel.add(new Option("To: Everyone", "everyone"));
+    sel.add(isHost ? new Option("To: Selected people...", "users") : new Option("To: Host / admin only", "host"));
+    chat.to = [...sel.options].some((o) => o.value === prev) ? prev : "everyone"; sel.value = chat.to;
+    const note = $("chatToNote");
+    if (chat.to === "users") { const names = peopleNames(); note.hidden = false; note.textContent = names.length ? "Private message to: " + names.join(", ") : "Choose who gets this message - it stays private."; }
+    else if (chat.to === "host") { note.hidden = false; note.textContent = "Private: only the host / admin will see this."; }
+    else note.hidden = true;
+  }
+  $("chatTo").onchange = () => { chat.to = $("chatTo").value; chatRefresh(); if (chat.to === "users") openPeople(); };
+  function openPeople() {
+    closePops(); const box = $("peoplePick"); box.textContent = ""; box.append(chatEl("b", "", "Send privately to:"));
+    const list = [...peers.values()].filter((e) => e.info.user_id);
+    if (!list.length) box.append(chatEl("div", "fn", "Nobody else is in the meeting yet."));
+    for (const e of list) {
+      const row = chatEl("label"), cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = chat.users.has(e.info.user_id);
+      cb.onchange = () => { if (cb.checked) chat.users.add(e.info.user_id); else chat.users.delete(e.info.user_id); chatRefresh(); };
+      row.append(cb, document.createTextNode(e.info.name + (e.info.is_host ? " (host)" : ""))); box.append(row);
+    }
+    const r2 = chatEl("div", "row2"), all = chatEl("button", "", "Select all"), done = chatEl("button", "go", "Done");
+    all.type = done.type = "button";
+    all.onclick = () => { list.forEach((e) => chat.users.add(e.info.user_id)); chatRefresh(); openPeople(); }; done.onclick = closePops;
+    r2.append(all, done); box.append(r2); box.hidden = false;
+  }
+
+  // --- the paper-clip menu
+  function openAttach() {
+    closePops(); const menu = $("attachMenu"); menu.textContent = "";
+    const items = [["image", "\uD83D\uDDBC  Image", "image/*"], ["video", "\uD83C\uDFAC  Video", "video/*"],
+                   ["audio", "\uD83C\uDFB5  Audio file", "audio/*"], ["pdf", "\uD83D\uDCC4  PDF", "application/pdf,.pdf"]];
+    for (const [kind, label, accept] of items) { const b = chatEl("button", "mi", label); b.type = "button"; b.onclick = () => pickFile(kind, accept); menu.append(b); }
+    const v = chatEl("button", "mi", "\uD83C\uDF99  Voice message"); v.type = "button"; v.onclick = () => { closePops(); voiceStart(); }; menu.append(v);
+    if (isHost) { const p = chatEl("button", "mi", "\uD83D\uDCCA  Poll (vote)"); p.type = "button"; p.onclick = openPollForm; menu.append(p); }
+    menu.hidden = false;
+  }
+  $("btnAttach").onclick = () => ($("attachMenu").hidden ? openAttach() : closePops());
+  function pickFile(kind, accept) {
+    closePops(); const inp = document.createElement("input"); inp.type = "file"; inp.accept = accept;
+    inp.onchange = () => { const f = inp.files[0]; if (f) setPending({ kind, blob: f, name: f.name, size: f.size }); };
+    inp.click();
+  }
+  function setPending(p) {
+    clearPending(); chat.pending = p;
+    $("pendName").textContent = `${p.name} (${fmtBytes(p.size)}) - sent with your next message`;
+    if (p.preview) { const a = $("pendAudio"); a.src = p.preview; a.hidden = false; }
+    $("pendBar").hidden = false;
+  }
+  function clearPending() {
+    if (chat.pending && chat.pending.preview) URL.revokeObjectURL(chat.pending.preview);
+    chat.pending = null; $("pendBar").hidden = true; $("pendAudio").hidden = true; $("pendAudio").removeAttribute("src");
+  }
+  $("pendClear").onclick = clearPending;
+
+  // --- voice message (recorded here, listened to before sending)
+  const voice = { rec: null, stream: null, parts: [], t0: 0, timer: 0, keep: false };
+  async function voiceStart() {
+    if (voice.rec) return;
+    if (typeof MediaRecorder === "undefined") { setStatus("Voice messages are not supported in this window."); return; }
+    try { voice.stream = await getMedia("audio"); } catch (e) { setStatus(mediaError(e, "Microphone")); return; }
+    const mime = ["audio/webm;codecs=opus", "audio/webm"].find((t) => MediaRecorder.isTypeSupported(t)) || "";
+    voice.parts = []; voice.keep = false;
+    voice.rec = new MediaRecorder(voice.stream, mime ? { mimeType: mime } : {});
+    voice.rec.ondataavailable = (e) => { if (e.data && e.data.size) voice.parts.push(e.data); };
+    voice.rec.onstop = () => {
+      clearInterval(voice.timer); voice.stream.getTracks().forEach((t) => t.stop()); $("voiceBar").hidden = true;
+      const blob = new Blob(voice.parts, { type: (voice.rec && voice.rec.mimeType) || "audio/webm" }); voice.rec = null;
+      if (voice.keep && blob.size > 1500) setPending({ kind: "audio", blob, name: `voice-${Date.now()}.webm`, size: blob.size, preview: URL.createObjectURL(blob) });
+    };
+    voice.rec.start(); voice.t0 = Date.now(); $("voiceBar").hidden = false; $("voiceTime").textContent = "0:00";
+    voice.timer = setInterval(() => {
+      const s = Math.floor((Date.now() - voice.t0) / 1000); $("voiceTime").textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+      if (s >= 180) voiceStop(true);                                            // 3 minutes at most
+    }, 500);
+  }
+  function voiceStop(keep) { if (!voice.rec) return; voice.keep = keep; try { voice.rec.stop(); } catch (e) {} }
+  $("voiceDone").onclick = () => voiceStop(true); $("voiceCancel").onclick = () => voiceStop(false);
+
+  // --- sending
+  async function uploadPending() {
+    const p = chat.pending, q = new URLSearchParams({ kind: p.kind, audience: chat.to, user_ids: [...chat.users].join(",") });
+    const fd = new FormData(); fd.append("file", p.blob, p.name);
+    const r = await fetch(`/api/meetings/${chatEnc()}/chat-upload?${q}`, { method: "POST", headers: chatAuth(), body: fd });
+    const d = await r.json().catch(() => null);
+    if (!r.ok) throw new Error((d && d.detail) || "HTTP " + r.status);
+    return d.id;
+  }
+  $("chatform").onsubmit = async (e) => {
+    e.preventDefault();
+    const input = $("chatinput"), text = input.value.trim();
+    if (!text && !chat.pending) return;
+    if (chat.to === "users" && !peopleNames().length) { setStatus("Choose who should get this message."); openPeople(); return; }
+    const btn = e.target.querySelector("button.send"); btn.disabled = true;
+    try {
+      const file_id = chat.pending ? await uploadPending() : undefined;
+      send({ type: "chat", text, to: chat.to, user_ids: [...chat.users], file_id });
+      input.value = ""; clearPending();
+    } catch (err) { setStatus("Could not send: " + err.message); }
+    btn.disabled = false;
   };
+
+  // --- showing messages and attachments
+  function fileLink(id) {
+    const c = chat.links.get(id);
+    if (c && c.exp > Date.now()) return Promise.resolve(c.url);
+    return fetch(`/api/files/${id}/link`, { headers: chatAuth() }).then(async (r) => {
+      const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error(d.detail || "HTTP " + r.status);
+      chat.links.set(id, { url: d.url, exp: Date.now() + 25 * 60000 }); return d.url;
+    });
+  }
+  function attachmentEl(a) {
+    const box = chatEl("div", "att"); let media = null;
+    if (a.kind === "image") { media = document.createElement("img"); media.alt = a.name; media.onclick = () => { $("lightbox").querySelector("img").src = media.src; $("lightbox").hidden = false; }; }
+    else if (a.kind === "video") { media = document.createElement("video"); media.controls = true; media.preload = "metadata"; }
+    else if (a.kind === "audio") { media = document.createElement("audio"); media.controls = true; media.preload = "metadata"; }
+    if (media) {
+      box.append(media);
+      media.onerror = () => box.append(chatEl("div", "fn", "This format cannot play here - use Download."));
+      fileLink(a.id).then((u) => { media.src = u; }).catch((e) => box.append(chatEl("div", "fn", "Could not load: " + e.message)));
+    } else box.append(chatEl("div", "", "\uD83D\uDCC4 " + a.name));
+    box.append(chatEl("div", "fn", `${a.name} (${fmtBytes(a.size)})`));
+    const dl = chatEl("button", "dl", "Download"); dl.type = "button";
+    dl.onclick = async () => {
+      try { const u = await fileLink(a.id), x = document.createElement("a"); x.href = u + "&download=1"; x.download = a.name; document.body.append(x); x.click(); x.remove(); }
+      catch (e) { setStatus("Could not download: " + e.message); }
+    };
+    box.append(dl); return box;
+  }
+  $("lightbox").onclick = () => { $("lightbox").hidden = true; };
+  function chatShow(m) {
+    const mine = m.from === myId, box = chatEl("div", "cm" + (mine ? " mine" : "")), hd = chatEl("div", "hd");
+    hd.append(chatEl("b", "", mine ? "You" : m.name), document.createTextNode("  " + clock(m.ts)));
+    if (m.to === "host") hd.append(chatEl("span", "tag", mine ? "to host only" : "private to host"));
+    else if (m.to === "users") hd.append(chatEl("span", "tag", mine ? "private to " + (m.to_names || []).join(", ") : "private message to you"));
+    box.append(hd);
+    if (m.text) box.append(chatEl("div", "body", m.text));
+    if (m.attachment) box.append(attachmentEl(m.attachment));
+    const log = $("chatlog"); log.append(box); log.scrollTop = log.scrollHeight;
+    if (!mine && $("side").classList.contains("hidden")) { chat.unread++; chatBadge(); }
+  }
+
+  // --- polls (the host asks, everyone votes, results update live)
+  function pollDraw(c) {
+    const p = c.state, el = c.el, mine = new Set(chat.mine.get(p.id) || []), total = Math.max(1, p.options.reduce((s, o) => s + o.count, 0));
+    el.textContent = "";
+    el.append(chatEl("div", "pq", "\uD83D\uDCCA " + p.question));
+    el.append(chatEl("div", "pm", `${p.multiple ? "Choose one or more" : "Choose one"}${p.anonymous ? " - anonymous" : ""}${p.closed ? " - CLOSED" : ""} - by ${p.created_by}`));
+    for (const o of p.options) {
+      const b = chatEl("button", "popt" + (mine.has(o.id) ? " on" : "")), bar = chatEl("div", "pbar");
+      b.type = "button"; b.disabled = p.closed; bar.style.width = (o.count / total) * 100 + "%";
+      b.append(bar, chatEl("span", "", (mine.has(o.id) ? "\u2713 " : "") + o.text), chatEl("span", "", String(o.count)));
+      b.onclick = () => pollVote(p, o.id); el.append(b);
+      if (o.names && o.names.length) el.append(chatEl("div", "who", o.names.join(", ")));
+    }
+    el.append(chatEl("div", "pm", `${p.total_voters} voted`));
+    if (isHost && !p.closed) { const x = chatEl("button", "pclose", "Close poll"); x.type = "button"; x.onclick = () => send({ type: "poll_close", poll_id: p.id }); el.append(x); }
+  }
+  function pollCard(id) {
+    let c = chat.polls.get(id);
+    if (!c) { c = { el: chatEl("div", "poll"), state: null }; chat.polls.set(id, c); $("chatlog").append(c.el); }
+    return c;
+  }
+  function pollUpdate(p) {
+    const c = pollCard(p.id), first = !c.state; c.state = p; pollDraw(c);
+    if (first) {
+      $("chatlog").scrollTop = $("chatlog").scrollHeight;
+      if ($("side").classList.contains("hidden")) { chat.unread++; chatBadge(); setStatus("New poll: " + p.question); }
+    }
+  }
+  function pollMine(id, ids) { chat.mine.set(id, ids); const c = chat.polls.get(id); if (c && c.state) pollDraw(c); }
+  function pollsInit(m) {
+    for (const [k, v] of Object.entries(m.mine || {})) chat.mine.set(+k, v);
+    (m.polls || []).forEach((p) => { const c = pollCard(p.id); c.state = p; pollDraw(c); });
+  }
+  function pollVote(p, optId) {
+    let sel = new Set(chat.mine.get(p.id) || []);
+    if (p.multiple) { if (sel.has(optId)) sel.delete(optId); else sel.add(optId); } else sel = new Set([optId]);
+    send({ type: "poll_vote", poll_id: p.id, option_ids: [...sel] });
+  }
+  function openPollForm() {
+    closePops(); const f = $("pollForm"); f.textContent = ""; f.append(chatEl("b", "", "New poll"));
+    const q = chatEl("input"); q.type = "text"; q.maxLength = 300; q.placeholder = "Question"; f.append(q);
+    const box = chatEl("div"), inputs = []; f.append(box);
+    const addOpt = () => { if (inputs.length >= 8) return; const i = chatEl("input"); i.type = "text"; i.maxLength = 120; i.placeholder = "Option " + (inputs.length + 1); inputs.push(i); box.append(i); };
+    addOpt(); addOpt(); addOpt();
+    const more = chatEl("button", "mi", "+ Add option"); more.type = "button"; more.onclick = addOpt; f.append(more);
+    const l1 = chatEl("label"), multi = document.createElement("input"); multi.type = "checkbox"; l1.append(multi, document.createTextNode("Allow several answers"));
+    const l2 = chatEl("label"), anon = document.createElement("input"); anon.type = "checkbox"; l2.append(anon, document.createTextNode("Anonymous (names are hidden)"));
+    f.append(l1, l2);
+    const row = chatEl("div", "row2"), go = chatEl("button", "go", "Send poll"), no = chatEl("button", "", "Cancel"); go.type = no.type = "button";
+    go.onclick = () => {
+      const options = inputs.map((i) => i.value.trim()).filter(Boolean);
+      if (!q.value.trim() || options.length < 2) { setStatus("Write a question and at least 2 options."); return; }
+      send({ type: "poll_create", question: q.value.trim(), options, multiple: multi.checked, anonymous: anon.checked }); closePops();
+    };
+    no.onclick = closePops; row.append(go, no); f.append(row); f.hidden = false; q.focus();
+  }
   $("btnMuteAll").onclick = () => { send({ type: "mute_all" }); addChat("system", "You muted everyone"); };
   $("btnEnd").onclick = () => { if (confirm("End this meeting for everyone?")) send({ type: "end_meeting" }); };
   $("btnLeave").onclick = () => finish(0);

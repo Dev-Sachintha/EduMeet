@@ -2,7 +2,7 @@
 import enum
 from datetime import datetime, timezone
 
-from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Integer, String, Text, false, true
+from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Integer, String, Text, false, text, true
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.database import Base
@@ -94,6 +94,10 @@ class MeetingFile(Base):
     content_type: Mapped[str] = mapped_column(String(150), default="application/octet-stream")
     size: Mapped[int] = mapped_column(BigInteger, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    # who may open the file: 'everyone' in the meeting, or only the 'host' (host/admin) plus the uploader
+    audience: Mapped[str] = mapped_column(String(10), default="everyone", server_default=text("'everyone'"))
+    # audience 'users' (host -> selected people): comma-separated user ids that may open the file
+    recipients: Mapped[str] = mapped_column(String(1000), default="", server_default=text("''"))
 
     uploader: Mapped["User"] = relationship()
 
@@ -214,4 +218,37 @@ class AttendanceMark(Base):
     kind: Mapped[str] = mapped_column(String(10), default="manual")
     mark: Mapped[str] = mapped_column(String(10), default="present")
     rollcall_id: Mapped[int | None] = mapped_column(nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class Poll(Base):
+    __tablename__ = "polls"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    meeting_id: Mapped[int] = mapped_column(ForeignKey("meetings.id", ondelete="CASCADE"), index=True)
+    creator_id: Mapped[int | None] = mapped_column(nullable=True)
+    creator_name: Mapped[str] = mapped_column(String(120), default="")
+    question: Mapped[str] = mapped_column(String(300))
+    multiple: Mapped[bool] = mapped_column(Boolean, default=False)
+    anonymous: Mapped[bool] = mapped_column(Boolean, default=False)
+    closed: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class PollOption(Base):
+    __tablename__ = "poll_options"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    poll_id: Mapped[int] = mapped_column(ForeignKey("polls.id", ondelete="CASCADE"), index=True)
+    text: Mapped[str] = mapped_column(String(120))
+    position: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class PollVote(Base):
+    __tablename__ = "poll_votes"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    poll_id: Mapped[int] = mapped_column(ForeignKey("polls.id", ondelete="CASCADE"), index=True)
+    option_id: Mapped[int] = mapped_column(ForeignKey("poll_options.id", ondelete="CASCADE"))
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

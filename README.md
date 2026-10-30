@@ -194,6 +194,24 @@ sign in once again after this update.
 
 ---
 
+## Chat: private messages, attachments, voice messages and polls
+
+Open **Chat**. Next to the box there is a **paper-clip** menu and a **To:** choice.
+
+* **To:** students choose *Everyone* or *Host / admin only* (private). The host chooses *Everyone* or *Selected people...*
+  (tick the people; only they and the host see it, and the host sees who got it).
+* **Paper-clip menu:** **Image**, **Video**, **Audio file**, **PDF**, **Voice message** (record, listen, then send) and, for the host,
+  **Poll**. The chosen file waits above the box and is sent with your next message (you can add a caption). Private attachments are
+  only available to the people the message was sent to.
+* **Poll (host):** question + 2 to 8 options, optional *several answers* and *anonymous*. Everyone votes in the chat and sees the
+  results update live; the host can close the poll.
+* Images open large when clicked; every attachment has a **Download** button. Unread messages show as *Chat (3)*.
+
+Limits: sizes are limited by `MAX_CHAT_UPLOAD_MB`; the app's built-in browser cannot play every video format (for example some
+H.264 `.mp4` files) - use **Download** for those. Voice messages last up to 3 minutes.
+
+---
+
 ## Live attendance (with live charts)
 
 Attendance is **marked automatically** from who joins and leaves, and it updates live.

@@ -94,3 +94,21 @@ def hash_recovery(code: str) -> str:
 
 def hash_email_code(code: str) -> str:
     return hashlib.sha256((settings.secret_key + "email:" + code).encode("utf-8")).hexdigest()
+
+
+def make_file_link_token(user_id: int, file_id: int, minutes: int = 30) -> str:
+    """A link for ONE file and ONE person (media tags cannot send an Authorization header)."""
+    expire = datetime.now(timezone.utc) + timedelta(minutes=minutes)
+    return jwt.encode(
+        {"typ": "filelink", "sub": str(user_id), "file": int(file_id), "exp": expire}, settings.secret_key, algorithm=ALGORITHM
+    )
+
+
+def read_file_link_token(token: str) -> tuple[int, int] | None:
+    data = decode_access_token(token)
+    if not data or data.get("typ") != "filelink":  # normal login tokens (no typ) and these links are not interchangeable
+        return None
+    try:
+        return int(data["sub"]), int(data["file"])
+    except (KeyError, TypeError, ValueError):
+        return None

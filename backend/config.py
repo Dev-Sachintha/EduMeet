@@ -56,6 +56,7 @@ class Settings(BaseSettings):
     ai_max_parallel_transcriptions: int = 2
     ai_calls_per_10_min: int = 20
     max_material_mb: int = 300
+    max_chat_upload_mb: int = 50
 
     # attendance
     attendance_grace_minutes: int = 10      # joining later than this after the start = late
